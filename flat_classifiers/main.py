@@ -20,15 +20,12 @@ os.chdir(os.getcwd())
 from scripts.preprocess_dataset import Preprocess_dataset
 from scripts.word_vectors import Word_vectors
 from scripts.dataset_division import Dataset_division
-from scripts.models.bert_tweet import bert_tweet
 from scripts.training.train_bert_tweet import train
 from scripts.training.train_transformer_dnn import train_transformer
 from scripts.training.train_attention_dnn import train_attention
 from scripts.training.train_cnn import train_cnn
 from scripts.training.train_rnn import train_rnn
 from scripts.training.train_mlp import train_mlp
-from scripts.evaluation import Evaluation
-from scripts.lime_explanations import Lime_explanations
 
 #disable warnings
 logging.disable(logging.WARNING)
@@ -138,15 +135,13 @@ if __name__=='__main__':
     
     #create model
     print("\nBuilding model")
-    if config["model_name"] == "bert_tweet": 
-        model = train(config).train_bert_tweet(train_dataset, val_datasets, test_datasets)
-    elif config["model_name"] == "transformer":
+    if config["model_name"] == "transformer":
         model = train_transformer(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)
     elif config["model_name"] == "attention":
         model = train_attention(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)
     elif config["model_name"] == "cnn":
         model = train_cnn(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)
-    elif config["model_name"] == "rnn":
+    elif config["model_name"] in ["lstm", "bilstm", "gru", "bigru"]:
         model = train_rnn(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)
     elif config["model_name"] == "mlp":
         model = train_mlp(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)

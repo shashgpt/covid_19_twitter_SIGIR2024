@@ -81,7 +81,14 @@ class train_rnn(object):
         my_callbacks = [early_stopping_callback, AdditionalValidationSets(additional_validation_datasets, self.config)]
         
         #model compilation and summarization
-        model = bilstm(self.config, word_vectors)
+        if self.config["model_name"] == "lstm":
+            model = lstm(self.config, word_vectors)
+        elif self.config["model_name"] == "bilstm":
+            model = bilstm(self.config, word_vectors)
+        elif self.config["model_name"] == "gru":
+            model = gru(self.config, word_vectors)
+        elif self.config["model_name"] == "bigru":
+            model = bigru(self.config, word_vectors)
         model.compile(tf.keras.optimizers.legacy.Adam(
                     learning_rate=self.config["learning_rate"]), 
                     loss=['binary_crossentropy'], 

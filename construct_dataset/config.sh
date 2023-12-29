@@ -6,5 +6,4 @@ export LD_LIBRARY_PATH=$CUDNN_PATH/lib:$CONDA_PREFIX/lib/:$LD_LIBRARY_PATH
 
 python3 main.py \
 --asset_name $1 \
---start $2 \
---stop $3
+--folder_number $2

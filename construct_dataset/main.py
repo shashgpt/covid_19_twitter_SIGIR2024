@@ -12,11 +12,8 @@ if __name__=='__main__':
     parser.add_argument("--asset_name",
                         type=str,
                         required=True)
-    parser.add_argument("--start",
-                        type=int,
-                        required=True)
-    parser.add_argument("--stop",
-                        type=int,
+    parser.add_argument("--folder_number",
+                        type=str,
                         required=True)
     args = parser.parse_args()
     config = vars(args)

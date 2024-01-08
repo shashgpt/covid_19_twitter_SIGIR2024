@@ -1,14 +1,11 @@
 #!/bin/bash
 
-asset_name="without_rule_label_consistency_check"
-for i in {57..96}
+asset_name="without_rule_label_consistency_check_fixed_error_in_counters"
+file_no_start=153
+for i in {0..39}
 do  
-    # # # process_no=$(expr $i / 9)
-    process_no=$(expr $i - 1 - 56)
-    screen -S "screen"$i -d -m taskset --cpu-list $process_no bash config.sh $asset_name $i
-    # bash config.sh $asset_name $i
-    # # # sbatch config.sh $asset_name $i
-    # echo $process_no
+    file_no=$(expr $file_no_start + $i)
+    screen -S "corona_tweets"$file_no -d -m taskset --cpu-list $i bash config.sh $asset_name $file_no
 done
 
 # asset_name="without_rule_label_consistency_check"

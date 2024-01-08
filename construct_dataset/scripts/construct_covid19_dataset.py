@@ -152,10 +152,10 @@ class Construct_covid19_dataset(object):
                         "vader_accuracy":[],
                         "roberta_accuracy":[],
 
-                        "counter_blue_area_positive":0,
-                        "counter_blue_area_negative":0,
+                        "counter_no_rule_positive":0,
+                        "counter_no_rule_negative":0,
 
-                        "counter_no_rule_rule_syntactic_structure":0,
+                        "counter_no_rule_with_rule_syntactic_structure":0,
 
                         "counter_positive_a_but_b_contrast":0,
                         "counter_negative_a_but_b_contrast":0,
@@ -603,12 +603,12 @@ class Construct_covid19_dataset(object):
                         # Update the counters
                         self.counters["tweets_in_distribution"] += 1
                         if rule_structure == "no_structure" and sentiment_label == 1:
-                            self.counters["counter_blue_area_positive"] += 1
+                            self.counters["counter_no_rule_positive"] += 1
                         elif rule_structure == "no_structure" and sentiment_label == -1:
-                            self.counters["counter_blue_area_positive"] += 1
+                            self.counters["counter_no_rule_negative"] += 1
 
                         if rule_structure != "not_applicable" and rule_label == "no_rule":
-                            self.counters["counter_no_rule_rule_syntactic_structure"] += 1
+                            self.counters["counter_no_rule_with_rule_syntactic_structure"] += 1
 
                         if (rule_label == "a-but-b") and contrast == "contrast" and sentiment_label == 1:
                             self.counters["counter_positive_a_but_b_contrast"] += 1
@@ -773,10 +773,10 @@ class Construct_covid19_dataset(object):
         print("Tweets after consistency check: ", self.counters["consistency_check"].count(1))
         print("No of tweets filtered by consistency check: ", sum(self.counters["consistency_check"])/len(self.counters["consistency_check"]))
         print("\n")
-        print("Blue area, positive tweets: ", self.counters["counter_blue_area_positive"])
-        print("Blue area negative tweets: ", self.counters["counter_blue_area_negative"])
+        print("Blue area, positive tweets: ", self.counters["counter_no_rule_positive"])
+        print("Blue area negative tweets: ", self.counters["counter_no_rule_negative"])
         print("\n")
-        print("Contain rule structure but corresponding rule is not applicable as per its linguistic definition: ", self.counters["counter_no_rule_rule_syntactic_structure"])
+        print("Contain rule structure but corresponding rule is not applicable as per its linguistic definition: ", self.counters["counter_no_rule_with_rule_syntactic_structure"])
         print("\n")
         print("a-but-b rule, contrast and Positive: ", self.counters["counter_positive_a_but_b_contrast"])
         print("a-but-b rule, contrast and Negative: ", self.counters["counter_negative_a_but_b_contrast"])

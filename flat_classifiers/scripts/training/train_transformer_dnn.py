@@ -10,7 +10,7 @@ from lime import lime_text
 import traceback
 from tqdm import tqdm
 
-from scripts.additional_validation_sets import AdditionalValidationSets
+from scripts.training.additional_validation_sets import AdditionalValidationSets
 
 class TransformerBlock(layers.Layer):
     def __init__(self, embed_dim, num_heads, rate=0.1):
@@ -120,8 +120,10 @@ class train_transformer(object):
                                                         mode="min",
                                                         baseline=None, 
                                                         restore_best_weights=True)
-        my_callbacks = [early_stopping_callback, 
-                        AdditionalValidationSets(additional_validation_datasets, self.config)]
+        my_callbacks = [
+                        # early_stopping_callback, 
+                        AdditionalValidationSets(additional_validation_datasets, self.config)
+                       ]
 
         #model compilation and summarization
         vocab_size = len(vocab)
@@ -129,7 +131,7 @@ class train_transformer(object):
         inputs = layers.Input(shape=(maxlen,))
         embedding_layer = TokenAndPositionEmbedding(maxlen, vocab_size, embed_dim)
         x = embedding_layer(inputs)
-        transformer_block = TransformerBlock(embed_dim, 12)
+        transformer_block = TransformerBlock(embed_dim, 6)
         x = transformer_block(x)
         x = layers.GlobalAveragePooling1D()(x)
         x = layers.Dropout(0.1)(x)
@@ -253,5 +255,11 @@ class train_transformer(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
+        
+        #save the configuration parameters (hyperparameters)
+        if not os.path.exists("assets/configurations/"):
+            os.makedirs("assets/configurations/")
+        with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
+            pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
         return model

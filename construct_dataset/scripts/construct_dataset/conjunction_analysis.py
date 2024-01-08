@@ -3,16 +3,18 @@ from nltk.tokenize import TweetTokenizer
 def conjunction_analysis(tweet):
 
     #lowercase and tokenize the sentence
-    # tokenized_sentence = tweet.lower().split()
-    tweet_lower_case = tweet.lower()
-    tokenizer = TweetTokenizer()
-    tokenized_sentence = tokenizer.tokenize(tweet_lower_case)
+    tokenized_sentence = tweet.lower().split()
+    tokenized_sentence_orig_case = tweet.split()
+
+    # tweet_lower_case = tweet.lower()
+    # tokenizer = TweetTokenizer()
+    # tokenized_sentence = tokenizer.tokenize(tweet_lower_case)
 
     #output
     rule_structure = None
     rule_conjunct = None
-    A_clause = None
-    B_clause = None
+    a_conjunct = None
+    b_conjunct = None
 
     #markers list
     marker_list = [
@@ -41,13 +43,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-but-b"
             rule_conjunct = "b"
 
-            A_clause = tweet.split('but')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("but")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("but")+1:]
 
-            B_clause = tweet.split('but')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
     
     # A-while-B
     word_list = marker_list.copy()
@@ -57,13 +60,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-while-b"
             rule_conjunct = "a"
 
-            A_clause = tweet.split('while')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("while")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("while")+1:]
 
-            B_clause = tweet.split('while')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-yet-B
     word_list = marker_list.copy()
@@ -73,13 +77,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-yet-b"
             rule_conjunct = "b"   
 
-            A_clause = tweet.split('yet')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("yet")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("yet")+1:]
 
-            B_clause = tweet.split('yet')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-however-B
     word_list = marker_list.copy()
@@ -89,13 +94,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-however-b"
             rule_conjunct = "b"
 
-            A_clause = tweet.split('however')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("however")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("however")+1:]
 
-            B_clause = tweet.split('however')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-despite-B
     word_list = marker_list.copy()
@@ -105,13 +111,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-despite-b"
             rule_conjunct = "b"
 
-            A_clause = tweet.split('despite')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("despite")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("despite")+1:]
 
-            B_clause = tweet.split('despite')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-although-B
     word_list = marker_list.copy()
@@ -121,13 +128,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-although-b"
             rule_conjunct = "a"
 
-            A_clause = tweet.split('although')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("although")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("although")+1:]
 
-            B_clause = tweet.split('although')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-though-B
     word_list = marker_list.copy()
@@ -137,13 +145,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-though-b"
             rule_conjunct = "a"
 
-            A_clause = tweet.split('though')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("though")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("though")+1:]
 
-            B_clause = tweet.split('though')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-nevertheless-B
     word_list = marker_list.copy()
@@ -153,13 +162,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-nevertheless-b"
             rule_conjunct = "b"
 
-            A_clause = tweet.split('nevertheless')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("nevertheless")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("nevertheless")+1:]
 
-            B_clause = tweet.split('nevertheless')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-otherwise-B
     word_list = marker_list.copy()
@@ -169,13 +179,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-otherwise-b"
             rule_conjunct = "b"
 
-            A_clause = tweet.split('otherwise')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("otherwise")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("otherwise")+1:]
 
-            B_clause = tweet.split('otherwise')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-still-B
     word_list = marker_list.copy()
@@ -185,13 +196,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-still-b"
             rule_conjunct = "b"
 
-            A_clause = tweet.split('still')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("still")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("still")+1:]
 
-            B_clause = tweet.split('still')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-nonetheless-B
     word_list = marker_list.copy()
@@ -201,13 +213,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-nonetheless-b"
             rule_conjunct = "b"
 
-            A_clause = tweet.split('nonetheless')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("nonetheless")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("nonetheless")+1:]
 
-            B_clause = tweet.split('nonetheless')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-till-B
     word_list = marker_list.copy()
@@ -217,13 +230,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-till-a"
             rule_conjunct = "a"
 
-            A_clause = tweet.split('till')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("till")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("till")+1:]
 
-            B_clause = tweet.split('till')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
     
     # A-until-B
     word_list = marker_list.copy()
@@ -233,13 +247,14 @@ def conjunction_analysis(tweet):
             rule_structure = "a-until-b"
             rule_conjunct = "a"
 
-            A_clause = tweet.split('until')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("until")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("until")+1:]
 
-            B_clause = tweet.split('until')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
+
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
 
     # A-in spite-B
     word_list = marker_list.copy()
@@ -249,12 +264,13 @@ def conjunction_analysis(tweet):
             rule_structure = "a-in spite-b"
             rule_conjunct = "a"
 
-            A_clause = tweet.split('in spite')[0]
-            A_clause = ''.join(A_clause)
-            A_clause = A_clause.strip().replace('  ', ' ')
+            a_conjunct = tokenized_sentence_orig_case[:tokenized_sentence.index("in spite")]
+            b_conjunct = tokenized_sentence_orig_case[tokenized_sentence.index("in spite")+1:]
 
-            B_clause = tweet.split('in spite')[1:]
-            B_clause = ''.join(B_clause)
-            B_clause = B_clause.strip().replace('  ', ' ')
+            a_conjunct = ' '.join(a_conjunct)
+            b_conjunct = ' '.join(b_conjunct)
 
-    return rule_structure, rule_conjunct, A_clause, B_clause
+            a_conjunct = a_conjunct.strip().replace('  ', ' ')
+            b_conjunct = b_conjunct.strip().replace('  ', ' ')
+
+    return rule_structure, rule_conjunct, a_conjunct, b_conjunct

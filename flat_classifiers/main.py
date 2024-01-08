@@ -17,10 +17,10 @@ import pprint
 os.chdir(os.getcwd())
 
 #scripts
-from scripts.preprocess_dataset import Preprocess_dataset
-from scripts.word_vectors import Word_vectors
-from scripts.dataset_division import Dataset_division
-from scripts.training.train_bert_tweet import train
+from scripts.dataset_processing.preprocess_dataset import Preprocess_dataset
+from scripts.dataset_processing.word_vectors import Word_vectors
+from scripts.dataset_processing.dataset_division import Dataset_division
+
 from scripts.training.train_transformer_dnn import train_transformer
 from scripts.training.train_attention_dnn import train_attention
 from scripts.training.train_cnn import train_cnn
@@ -32,7 +32,7 @@ logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 warnings.filterwarnings("ignore")
 
-#set the gpu device with highest free memory
+#set the gpu execution device with highest free memory
 def mask_unused_gpus(leave_unmasked=1): # No of avaialbe GPUs on the system
     COMMAND = "nvidia-smi --query-gpu=memory.free --format=csv"
     try:
@@ -116,7 +116,7 @@ if __name__=='__main__':
     np.random.seed(config["seed_value"])
     # tf.random.set_seed(config["seed_value"])
 
-    # print("\nCreating input data")
+    print("\nCreating input data")
     if os.path.exists("datasets/"+config["dataset_name"]+"/preprocessed_dataset.pickle"):
         with open("datasets/"+config["dataset_name"]+"/word_index.pickle", "rb") as handle:
             word_index = pickle.load(handle)
@@ -145,10 +145,4 @@ if __name__=='__main__':
         model = train_rnn(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)
     elif config["model_name"] == "mlp":
         model = train_mlp(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)
-
-    #save the configuration parameters for this run (marks the creation of an asset)
-    if not os.path.exists("assets/configurations/"):
-        os.makedirs("assets/configurations/")
-    with open("assets/configurations/"+config["asset_name"]+".pickle", 'wb') as handle:
-        pickle.dump(config, handle, protocol=pickle.HIGHEST_PROTOCOL)
     

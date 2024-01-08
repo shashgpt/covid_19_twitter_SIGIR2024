@@ -150,8 +150,10 @@ class train_cnn(object):
                                                         mode="min",
                                                         baseline=None, 
                                                         restore_best_weights=True)
-        my_callbacks = [early_stopping_callback, 
-                        AdditionalValidationSets(additional_validation_datasets, self.config)]
+        my_callbacks = [
+                        # early_stopping_callback, 
+                        AdditionalValidationSets(additional_validation_datasets, self.config)
+                        ]
 
         #model compilation and summarization
         model = cnn(self.config, word_vectors)

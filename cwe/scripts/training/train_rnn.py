@@ -1,167 +1,92 @@
-from tensorflow.keras.models import Model
-from tensorflow.keras import layers
-from tensorflow.keras.layers import Embedding, Dropout, Dense, Input, Softmax, Lambda
-from tensorflow.keras.initializers import RandomUniform
-from tensorflow.keras.initializers import Constant
-import tensorflow as tf
-import numpy as np
-import pandas as pd
 import os
 import pickle
+import numpy as np
+import pandas as pd
+from tensorflow.keras import layers
+from tensorflow.keras.layers import Input
+from tensorflow.keras import Model
+import tensorflow as tf
+from tensorflow.keras.initializers import Constant
 from lime import lime_text
-import traceback
 from tqdm import tqdm
-from transformers import TFAutoModel
-from transformers import AutoTokenizer
+import traceback
 
-from scripts.training.additional_validation_sets import AdditionalValidationSets
+from scripts.additional_validation_sets import AdditionalValidationSets
+from scripts.training.rnn_models.lstm import lstm
+from scripts.training.rnn_models.bilstm import bilstm
+from scripts.training.rnn_models.gru import gru
+from scripts.training.rnn_models.bigru import bigru
 
-def cnn(config, word_vectors): # Similar to one used in pytorch code for CIKM submission
 
-    input_sentence = Input(shape=(None,), dtype="int64")
-    word_embeddings = layers.Embedding(word_vectors.shape[0], 
-                                        word_vectors.shape[1], 
-                                        embeddings_initializer=Constant(word_vectors), 
-                                        trainable=config["fine_tune_word_embeddings"], 
-                                        mask_zero=True, 
-                                        name="word_embeddings")(input_sentence)
-
-    word_embeddings_reshaped = tf.keras.backend.expand_dims(word_embeddings, axis=1) # batch_size x 1 x sent_len x embedding_dim
-
-    conv_1 = layers.Conv2D(filters = 100, 
-                            kernel_size = (3, 300),
-                            strides = 1,
-                            dilation_rate = 1,
-                            padding = "valid",
-                            data_format = "channels_first",
-                            name = "conv2D_1")(word_embeddings_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1 x 1
-    conv1_reshaped = tf.keras.backend.squeeze(conv_1, axis=3) # batch_size x 100 x sent len - filter_sizes[n] + 1
-    conv1_reshaped_relu = layers.ReLU()(conv1_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1
-    max_pool_1 = layers.GlobalMaxPooling1D(data_format="channels_first",
-                                            name="maxpool1D_1")(conv1_reshaped_relu) # batch size x n_filters
-
-    conv_2 = layers.Conv2D(filters = 100, 
-                            kernel_size = (4, 300),
-                            strides = 1,
-                            dilation_rate = 1,
-                            padding = "valid",
-                            data_format = "channels_first",
-                            name = "conv2D_2")(word_embeddings_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1 x 1
-    conv2_reshaped = tf.keras.backend.squeeze(conv_2, axis=3) # batch_size x 100 x sent len - filter_sizes[n] + 1
-    conv2_reshaped_relu = layers.ReLU()(conv2_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1
-    max_pool_2 = layers.GlobalMaxPooling1D(data_format="channels_first",
-                                            name="maxpool1D_2")(conv2_reshaped_relu) # batch size x n_filters
-
-    conv_3 = layers.Conv2D(filters = 100, 
-                            kernel_size = (5, 300),
-                            strides = 1,
-                            dilation_rate = 1,
-                            padding = "valid",
-                            data_format = "channels_first",
-                            name = "conv2D_3")(word_embeddings_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1 x 1
-    conv3_reshaped = tf.keras.backend.squeeze(conv_3, axis=3) # batch_size x 100 x sent len - filter_sizes[n] + 1
-    conv3_reshaped_relu = layers.ReLU()(conv3_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1
-    max_pool_3 = layers.GlobalMaxPooling1D(data_format="channels_first",
-                                            name="maxpool1D_3")(conv3_reshaped_relu) # batch size x n_filters
-
-    concat = layers.Concatenate(axis=1, name="concatenate")([max_pool_1, max_pool_2, max_pool_3])
-    concat_dropout = layers.Dropout(rate=config["dropout"], seed=config["seed_value"], name="dropout")(concat)       
-    out = layers.Dense(1, activation='sigmoid', name='output')(concat_dropout)
-
-    model = Model(inputs=[input_sentence], outputs=[out])
-
-    if config["optimizer"] == "adam":    
-        model.compile(tf.keras.optimizers.Adam(learning_rate=config["learning_rate"]), loss=['binary_crossentropy'], metrics=['accuracy'])
-    elif config["optimizer"] == "adadelta":
-        model.compile(tf.keras.optimizers.Adadelta(learning_rate=config["learning_rate"], rho=0.95, epsilon=1e-06), loss=['binary_crossentropy'], metrics=['accuracy'])
-    return model
-
-class train_cnn(object):
+class train_rnn(object):
     def __init__(self, config):
         self.config = config
+        self.vectorize_layer = None
+        self.model = None
     
     def vectorize(self, sentences):
         """
-        tokenize each preprocessed sentence in dataset using bert tokenizer
+        tokenize each preprocessed sentence in dataset as sentence.split()
+        encode each tokenized sentence as per vocabulary
+        right pad each encoded tokenized sentence with 0 upto max_tokenized_sentence_len the dataset 
         """
-        tokenizer = AutoTokenizer.from_pretrained("vinai/bertweet-covid19-base-cased", use_fast=False)
-        max_len = 0
-        input_ids = []
-        for sentence in sentences:
-            tokenized_context = tokenizer.encode(sentence)
-            input_id = tokenized_context
-            input_ids.append(input_id)
-            if len(input_id) > max_len:
-                max_len = len(input_id)
-        for index, input_id in enumerate(input_ids):
-            padding_length = max_len - len(input_ids[index])
-            input_ids[index] = input_ids[index] + ([0] * padding_length)
-        return np.array(input_ids)
+        return self.vectorize_layer(np.array(sentences)).numpy()
     
-    def pad(self, sentences, maxlen):
-        """
-        right pad sequence with 0 till max token length sentence
-        """
-        return tf.keras.utils.pad_sequences(sentences, value=0, padding='post', maxlen=maxlen)
-
     def prediction(self, text):
         x = self.vectorize(text)
-        x = self.pad(x, self.maxlen)
         pred_prob_1 = self.model.predict(x, batch_size=1000)
         pred_prob_0 = 1 - pred_prob_1
         prob = np.concatenate((pred_prob_0, pred_prob_1), axis=1)
         return prob
 
     def train_model(self, train_dataset, val_datasets, test_datasets, word_index, word_vectors):
-
+        
         # Make paths
-        if not os.path.exists("assets/training_history/"):
-            os.makedirs("assets/training_history/")
+        if not os.path.exists("assets/training_log/"):
+            os.makedirs("assets/training_log/")
 
-        #Create train, val, and test datasets
+        #create vocab and define the vectorize layer
+        vocab = [key for key in word_index.keys()]
+        self.vectorize_layer = tf.keras.layers.experimental.preprocessing.TextVectorization(standardize=None, split='whitespace', vocabulary=vocab)
+
+        # Create Train and Val datasets
         train_sentences = self.vectorize(train_dataset["sentence"])
         train_sentiment_labels = np.array(train_dataset["sentiment_label"])
         val_sentences = self.vectorize(val_datasets["val_dataset"]["sentence"])
         val_sentiment_labels = np.array(val_datasets["val_dataset"]["sentiment_label"])
         test_sentences = self.vectorize(test_datasets["test_dataset"]["sentence"])
         test_sentiment_labels = np.array(test_datasets["test_dataset"]["sentiment_label"])
-        maxlen = max([train_sentences.shape[1], val_sentences.shape[1], test_sentences.shape[1]])
-        self.maxlen = maxlen
-        train_sentences = self.pad(train_sentences, maxlen)
-        val_sentences = self.pad(val_sentences, maxlen)
-        test_sentences = self.pad(test_sentences, maxlen)
         train_dataset = (train_sentences, train_sentiment_labels)
         val_dataset = (val_sentences, val_sentiment_labels)
         test_dataset = (test_sentences, test_sentiment_labels)
 
-        # Create additional validation datasets
+        # Additional datasets for calculating metrics per epoch
         additional_validation_datasets = []
         for key, value in test_datasets.items():
             # if key in ["test_dataset_one_rule"]:
             #     continue
             sentences = self.vectorize(test_datasets[key]["sentence"])
-            sentences = self.pad(sentences, maxlen)
             sentiment_labels = np.array(test_datasets[key]["sentiment_label"])
             dataset = (sentences, sentiment_labels, key)
             additional_validation_datasets.append(dataset)
 
         # Define callbacks
-        early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',  # 1. Calculate val_loss_1 
-                                                        min_delta = 0,                  # 2. Check val_losses for next 10 epochs 
-                                                        patience=10,                    # 3. Stop training if none of the val_losses are lower than val_loss_1
-                                                        verbose=0,                      # 4. Get the trained weights corresponding to val_loss_1
-                                                        mode="min",
-                                                        baseline=None, 
-                                                        restore_best_weights=True)
-        my_callbacks = [early_stopping_callback, 
-                        AdditionalValidationSets(additional_validation_datasets, self.config)]
-
+        early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',              # 1. Calculate val_loss_1 
+                                                                    min_delta = 0,                  # 2. Check val_losses for next 10 epochs 
+                                                                    patience=10,                    # 3. Stop training if none of the val_losses are lower than val_loss_1
+                                                                    verbose=0,                      # 4. Get the trained weights corresponding to val_loss_1
+                                                                    mode="min",
+                                                                    baseline=None, 
+                                                                    restore_best_weights=True)
+        my_callbacks = [early_stopping_callback, AdditionalValidationSets(additional_validation_datasets, self.config)]
+        
         #model compilation and summarization
-        model = cnn(self.config, word_vectors)
-        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
-                                                        loss=['binary_crossentropy'], 
-                                                        metrics=['accuracy'])    
-        model.summary()
+        model = bilstm(self.config, word_vectors)
+        model.compile(tf.keras.optimizers.legacy.Adam(
+                    learning_rate=self.config["learning_rate"]), 
+                    loss=['binary_crossentropy'], 
+                    metrics=['accuracy'])
+        model.summary(line_length=150)
         self.model = model
 
         # Train the model
@@ -211,7 +136,7 @@ class train_cnn(object):
                 os.makedirs("assets/results/")
             with open("assets/results/"+self.config["asset_name"]+".pickle", 'wb') as handle:
                 pickle.dump(results, handle)
-        
+
         if self.config["generate_explanation"] == True:
             print("\nLIME explanations")
 
@@ -274,3 +199,5 @@ class train_cnn(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
+
+        return model

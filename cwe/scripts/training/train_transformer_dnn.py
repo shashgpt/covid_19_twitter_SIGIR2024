@@ -1,86 +1,92 @@
 import tensorflow as tf
-import os
+from tensorflow.keras import layers
+from tensorflow.keras.models import Model
 import numpy as np
-import pandas as pd
+import tensorflow as tf
+import os
 import pickle
+import pandas as pd
 from lime import lime_text
 import traceback
 from tqdm import tqdm
-import keras_tuner
+from transformers import TFAutoModel
+from transformers import AutoTokenizer
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-# class mlp(tf.keras.Model):
-#     def __init__(self, config, word_vectors, **kwargs):
-#         super().__init__()
-#         self.config = config
-#         self.word_vectors = word_vectors
+class TransformerBlock(layers.Layer):
+    def __init__(self, embed_dim, num_heads, rate=0.1):
+        super().__init__()
+        self.att = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
+        ff_dim = num_heads*4
+        self.ffn = tf.keras.Sequential(
+            [layers.Dense(ff_dim, activation="relu"), layers.Dense(embed_dim),]
+        )
+        self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
+        self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
+        self.dropout1 = layers.Dropout(rate)
+        self.dropout2 = layers.Dropout(rate)
 
-#         vocab_size = self.word_vectors.shape[0]
-#         embedding_dimensions = self.word_vectors.shape[1]
+    def call(self, inputs, training):
+        attn_output = self.att(inputs, inputs)
+        attn_output = self.dropout1(attn_output, training=training)
+        out1 = self.layernorm1(inputs + attn_output)
+        ffn_output = self.ffn(out1)
+        ffn_output = self.dropout2(ffn_output, training=training)
+        return self.layernorm2(out1 + ffn_output)
 
-#         #layers
-#         self.word_embeddings = tf.keras.layers.Embedding(vocab_size,
-#                                                     embedding_dimensions,
-#                                                     embeddings_initializer=tf.keras.initializers.Constant(word_vectors),
-#                                                     trainable=self.config["fine_tune_word_embeddings"],
-#                                                     mask_zero=True,
-#                                                     name="word_embeddings")
-#         self.reshape = tf.keras.layers.Flatten()
-#         self.dense = tf.keras.layers.Dense(128, activation='relu')
-#         self.out = tf.keras.layers.Dense(1, activation="sigmoid")
+class TokenAndPositionEmbedding(layers.Layer):
+    def __init__(self, maxlen, vocab_size, embed_dim):
+        super().__init__()
+        self.token_emb = layers.Embedding(input_dim=vocab_size, output_dim=embed_dim)
+        self.pos_emb = layers.Embedding(input_dim=maxlen, output_dim=embed_dim)
 
-#     def call(self, input):
-#         word_embeddings = self.word_embeddings(input)
-#         word_embeddings_flatten = self.reshape(word_embeddings)
-#         dense = self.dense(word_embeddings_flatten)
-#         out = self.out(dense)
-#         return out
+    def call(self, x):
+        maxlen = tf.shape(x)[-1]
+        positions = tf.range(start=0, limit=maxlen, delta=1)
+        positions = self.pos_emb(positions)
+        x = self.token_emb(x)
+        return x + positions
 
-def mlp(config, word_vectors, maxlen, hyperparameters_tuning=None):
+class bert_transformer(Model):
+    def __init__(self, config, **kwargs):
+        super().__init__()
+        self.config = config
+        if self.config["model_name"] == "bert_tweet":
+            self.bert_encoder = TFAutoModel.from_pretrained("vinai/bertweet-covid19-base-cased")
+            for layer in self.bert_encoder.layers:
+                layer.trainable = config["fine_tune_word_embeddings"]
+        self.out = layers.Dense(1, activation='sigmoid', name='output')
     
-    if hyperparameters_tuning == None:
-        input_sentence = tf.keras.layers.Input(shape=(maxlen,), dtype="int64")
-        word_embeddings = tf.keras.layers.Embedding(word_vectors.shape[0], 
-                                                    word_vectors.shape[1], 
-                                                    embeddings_initializer=tf.keras.initializers.Constant(word_vectors), 
-                                                    trainable=config["fine_tune_word_embeddings"], 
-                                                    mask_zero=True, 
-                                                    name="word_embeddings")(input_sentence)
-        word_embeddings_flatten = tf.keras.layers.Flatten()(word_embeddings)
-        dense = tf.keras.layers.Dense(128, activation='relu')(word_embeddings_flatten)
-        dense_dropout = tf.keras.layers.Dropout(config["dropout"])(dense)
-        out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')(dense_dropout)
-        model = tf.keras.Model(inputs=[input_sentence], outputs=[out])
-        return model
-    else:
-        input_sentence = tf.keras.layers.Input(shape=(maxlen,), dtype="int64")
-        word_embeddings = tf.keras.layers.Embedding(word_vectors.shape[0], 
-                                                    word_vectors.shape[1], 
-                                                    embeddings_initializer=tf.keras.initializers.Constant(word_vectors), 
-                                                    trainable=config["fine_tune_word_embeddings"], 
-                                                    mask_zero=True, 
-                                                    name="word_embeddings")(input_sentence)
-        word_embeddings_flatten = tf.keras.layers.Flatten()(word_embeddings)
-        dense = tf.keras.layers.Dense(hyperparameters_tuning["units"], 
-                                      activation='relu')(word_embeddings_flatten)
-        if hyperparameters_tuning["dropout"] == True:
-            dense = tf.keras.layers.Dropout(config["dropout"])(dense)
-        out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')(dense)
-        model = tf.keras.Model(inputs=[input_sentence], outputs=[out])
-        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=hyperparameters_tuning["lr"]), 
-                      loss=['binary_crossentropy'], 
-                      metrics=['accuracy']) 
-        return model
+    def compute_attention_masks(self, input_ids):
+        zero = tf.constant(0, dtype=tf.int64)
+        attention_masks = tf.cast(tf.not_equal(input_ids, zero), dtype=tf.int64)
+        return attention_masks
+    
+    def call(self, input_ids, attention_masks=None, **kwargs):
+        
+        #input
+        input_ids = tf.cast(input_ids, dtype=tf.int64)
 
-class train_mlp(object):
-    def __init__(self, config) -> None:
+        #create attention masks
+        if attention_masks == None:
+            attention_masks = self.compute_attention_masks(input_ids)
+
+        #bert_tweet output
+        word_embedding = self.bert_encoder(input_ids, attention_masks)[0]
+       
+        #output
+        out = self.out(word_embedding)
+
+        return out
+
+class train_transformer(object):
+    def __init__(self, config):
         self.config = config
         self.vectorize_layer = None
         self.maxlen = None
         self.model = None
-        self.word_vectors = None
-
+    
     def vectorize(self, sentences):
         """
         tokenize each preprocessed sentence in dataset as sentence.split()
@@ -89,12 +95,31 @@ class train_mlp(object):
         """
         return self.vectorize_layer(np.array(sentences)).numpy()
     
+    def vectorize_bert(self, sentences):
+        """
+        tokenize each preprocessed sentence in dataset using bert tokenizer
+        """
+        if self.config["model_name"] == "bert_tweet":
+            tokenizer = AutoTokenizer.from_pretrained("vinai/bertweet-covid19-base-cased", use_fast=False)
+        max_len = 0
+        input_ids = []
+        for sentence in sentences:
+            tokenized_context = tokenizer.encode(sentence)
+            input_id = tokenized_context
+            input_ids.append(input_id)
+            if len(input_id) > max_len:
+                max_len = len(input_id)
+        for index, input_id in enumerate(input_ids):
+            padding_length = max_len - len(input_ids[index])
+            input_ids[index] = input_ids[index] + ([0] * padding_length)
+        return np.array(input_ids)
+    
     def pad(self, sentences, maxlen):
         """
         right pad sequence with 0 till max token length sentence
         """
         return tf.keras.utils.pad_sequences(sentences, value=0, padding='post', maxlen=maxlen)
-
+    
     def prediction(self, text):
         x = self.vectorize(text)
         x = self.pad(x, self.maxlen)
@@ -103,23 +128,6 @@ class train_mlp(object):
         prob = np.concatenate((pred_prob_0, pred_prob_1), axis=1)
         return prob
 
-    def build_model(self, hp):
-        units = hp.Int("units", min_value=1, max_value=129, step=8)
-        lr = hp.Float("lr", min_value=1e-5, max_value=3e-2, sampling="log")
-        # activation = hp.Choice("activation", ["relu", "tanh"])
-        dropout = hp.Boolean("dropout")
-        hyperparameters_tuning = {
-                                 "units":units,
-                                 "lr":lr,
-                                 "dropout":dropout
-                                 }
-        model = mlp(self.config, 
-                    self.word_vectors, 
-                    self.maxlen, 
-                    hyperparameters_tuning=hyperparameters_tuning)
-        model.summary()
-        return model
-    
     def train_model(self, train_dataset, val_datasets, test_datasets, word_index, word_vectors):
 
         # Make paths
@@ -165,70 +173,46 @@ class train_mlp(object):
                                                         mode="min",
                                                         baseline=None, 
                                                         restore_best_weights=True)
-        my_callbacks = [
-                        # early_stopping_callback,
-                        AdditionalValidationSets(additional_validation_datasets, self.config)
-                       ]
-        
-        # #model compilation and summarization
-        # model = mlp(self.config, word_vectors, maxlen)
-        # model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
-        #               loss=['binary_crossentropy'], 
-        #               metrics=['accuracy']) 
-        # model.summary()
-        # self.model = model
+        my_callbacks = [early_stopping_callback, 
+                        AdditionalValidationSets(additional_validation_datasets, self.config)]
 
-        #Hyperparameter tuning
-        self.word_vectors = word_vectors
-        self.build_model(keras_tuner.HyperParameters())
-        tuner = keras_tuner.RandomSearch(
-                                        hypermodel=self.build_model,
-                                        objective="val_loss",
-                                        max_trials=3,
-                                        executions_per_trial=2,
-                                        overwrite=True,
-                                        )
-        tuner.search_space_summary()
+        #model compilation and summarization
+        vocab_size = len(vocab)
+        embed_dim = word_vectors.shape[1]
+        inputs = layers.Input(shape=(maxlen,))
+        embedding_layer = TokenAndPositionEmbedding(maxlen, vocab_size, embed_dim)
+        x = embedding_layer(inputs)
+        transformer_block = TransformerBlock(embed_dim, 12)
+        x = transformer_block(x)
+        x = layers.GlobalAveragePooling1D()(x)
+        x = layers.Dropout(0.1)(x)
+        x = layers.Dense(20, activation="relu")(x)
+        x = layers.Dropout(0.1)(x)
+        outputs = layers.Dense(1, activation='sigmoid', name='output')(x)
+        model = tf.keras.Model(inputs=inputs, outputs=outputs)
+        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+                      loss=['binary_crossentropy'], 
+                      metrics=['accuracy'])    
+        model.summary()
+        self.model = model
 
         # Train the model
         if self.config["train_model"] == True:
-            # self.model.fit(x=train_dataset[0], 
-            #                 y=train_dataset[1], 
-            #                 batch_size=self.config["mini_batch_size"], 
-            #                 epochs=self.config["train_epochs"], 
-            #                 validation_data=val_dataset, 
-            #                 callbacks=my_callbacks)
-            tuner.search(train_dataset[0], 
-                         train_dataset[1],
-                         batch_size=self.config["mini_batch_size"],
-                         epochs=self.config["train_epochs"], 
-                         validation_data=val_dataset)
-            tuner.results_summary()
-            best_hps = tuner.get_best_hyperparameters(5)
-            self.model = self.build_model(best_hps[0])
-            self.model.fit(x=train_dataset[0], 
-                            y=train_dataset[1], 
-                            batch_size=self.config["mini_batch_size"], 
-                            epochs=self.config["train_epochs"], 
-                            validation_data=val_dataset, 
-                            callbacks=my_callbacks)
+            model.fit(x=train_dataset[0], 
+                    y=train_dataset[1], 
+                    batch_size=self.config["mini_batch_size"], 
+                    epochs=self.config["train_epochs"], 
+                    validation_data=val_dataset, 
+                    callbacks=my_callbacks)
 
             # Save trained model
             if not os.path.exists("assets/trained_models/"):
                 os.makedirs("assets/trained_models/")
-            self.model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
+            model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
-            # Save the configurations
-            self.config["hyperparameters"] = best_hps[0]
-            if not os.path.exists("assets/configurations/"):
-                os.makedirs("assets/configurations/")
-            with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
-                pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        
         if self.config["evaluate_model"] == True:
 
             #load model
-            self.model = self.build_model(self.config["hyperparameters"])
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
             # Results to be created after evaluation
@@ -264,7 +248,6 @@ class train_mlp(object):
             print("\nLIME explanations")
 
             #Load trained model
-            self.model = self.build_model(self.config["hyperparameters"])
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
             #Results to be created after explanation
@@ -323,3 +306,5 @@ class train_mlp(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
+
+        return model

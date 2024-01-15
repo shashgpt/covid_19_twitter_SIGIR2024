@@ -21,17 +21,15 @@ from scripts.dataset_processing.preprocess_dataset import Preprocess_dataset
 from scripts.dataset_processing.word_vectors import Word_vectors
 from scripts.dataset_processing.dataset_division import Dataset_division
 
-from scripts.training.train_transformer_dnn import train_transformer
-from scripts.training.train_cnn import train_cnn
-from scripts.training.train_rnn import train_rnn
-from scripts.training.train_mlp import train_mlp
+from scripts.training.train_bertweet_mlp import train_bertweet_mlp
+from scripts.training.train_bertweet_transformer import train_bertweet_transformer
 
 #disable warnings
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 warnings.filterwarnings("ignore")
 
-#set the gpu execution device with highest free memory
+#set the gpu device with highest free memory
 def mask_unused_gpus(leave_unmasked=1): # No of avaialbe GPUs on the system
     COMMAND = "nvidia-smi --query-gpu=memory.free --format=csv"
     try:
@@ -134,12 +132,8 @@ if __name__=='__main__':
     
     #create model
     print("\nBuilding model")
-    if config["model_name"] == "transformer":
-        train_transformer(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)
-    elif config["model_name"] == "cnn":
-        train_cnn(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)
-    elif config["model_name"] in ["lstm", "bilstm", "gru", "bigru"]:
-        train_rnn(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)
-    elif config["model_name"] == "mlp":
-        train_mlp(config).train_model(train_dataset, val_datasets, test_datasets, word_index, word_vectors)
+    if config["model_name"] == "bertweet_mlp":
+        train_bertweet_mlp(config).train_model(train_dataset, val_datasets, test_datasets)
+    elif config["model_name"] == "bertweet_transformer":
+        train_bertweet_transformer(config).train_model(train_dataset, val_datasets, test_datasets)
     

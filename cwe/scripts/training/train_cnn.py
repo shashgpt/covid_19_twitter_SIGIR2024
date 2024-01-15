@@ -1,93 +1,102 @@
+from tensorflow.keras.models import Model
+from tensorflow.keras import layers
+from tensorflow.keras.layers import Embedding, Dropout, Dense, Input, Softmax, Lambda
+from tensorflow.keras.initializers import RandomUniform
+from tensorflow.keras.initializers import Constant
 import tensorflow as tf
-import os
 import numpy as np
 import pandas as pd
+import os
 import pickle
 from lime import lime_text
 import traceback
 from tqdm import tqdm
-import keras_tuner
+from transformers import TFAutoModel
+from transformers import AutoTokenizer
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-# class mlp(tf.keras.Model):
-#     def __init__(self, config, word_vectors, **kwargs):
-#         super().__init__()
-#         self.config = config
-#         self.word_vectors = word_vectors
+def cnn(config, word_vectors): # Similar to one used in pytorch code for CIKM submission
 
-#         vocab_size = self.word_vectors.shape[0]
-#         embedding_dimensions = self.word_vectors.shape[1]
+    input_sentence = Input(shape=(None,), dtype="int64")
+    word_embeddings = layers.Embedding(word_vectors.shape[0], 
+                                        word_vectors.shape[1], 
+                                        embeddings_initializer=Constant(word_vectors), 
+                                        trainable=config["fine_tune_word_embeddings"], 
+                                        mask_zero=True, 
+                                        name="word_embeddings")(input_sentence)
 
-#         #layers
-#         self.word_embeddings = tf.keras.layers.Embedding(vocab_size,
-#                                                     embedding_dimensions,
-#                                                     embeddings_initializer=tf.keras.initializers.Constant(word_vectors),
-#                                                     trainable=self.config["fine_tune_word_embeddings"],
-#                                                     mask_zero=True,
-#                                                     name="word_embeddings")
-#         self.reshape = tf.keras.layers.Flatten()
-#         self.dense = tf.keras.layers.Dense(128, activation='relu')
-#         self.out = tf.keras.layers.Dense(1, activation="sigmoid")
+    word_embeddings_reshaped = tf.keras.backend.expand_dims(word_embeddings, axis=1) # batch_size x 1 x sent_len x embedding_dim
 
-#     def call(self, input):
-#         word_embeddings = self.word_embeddings(input)
-#         word_embeddings_flatten = self.reshape(word_embeddings)
-#         dense = self.dense(word_embeddings_flatten)
-#         out = self.out(dense)
-#         return out
+    conv_1 = layers.Conv2D(filters = 100, 
+                            kernel_size = (3, 300),
+                            strides = 1,
+                            dilation_rate = 1,
+                            padding = "valid",
+                            data_format = "channels_first",
+                            name = "conv2D_1")(word_embeddings_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1 x 1
+    conv1_reshaped = tf.keras.backend.squeeze(conv_1, axis=3) # batch_size x 100 x sent len - filter_sizes[n] + 1
+    conv1_reshaped_relu = layers.ReLU()(conv1_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1
+    max_pool_1 = layers.GlobalMaxPooling1D(data_format="channels_first",
+                                            name="maxpool1D_1")(conv1_reshaped_relu) # batch size x n_filters
 
-def mlp(config, word_vectors, maxlen, hyperparameters_tuning=None):
-    
-    if hyperparameters_tuning == None:
-        input_sentence = tf.keras.layers.Input(shape=(maxlen,), dtype="int64")
-        word_embeddings = tf.keras.layers.Embedding(word_vectors.shape[0], 
-                                                    word_vectors.shape[1], 
-                                                    embeddings_initializer=tf.keras.initializers.Constant(word_vectors), 
-                                                    trainable=config["fine_tune_word_embeddings"], 
-                                                    mask_zero=True, 
-                                                    name="word_embeddings")(input_sentence)
-        word_embeddings_flatten = tf.keras.layers.Flatten()(word_embeddings)
-        dense = tf.keras.layers.Dense(128, activation='relu')(word_embeddings_flatten)
-        dense_dropout = tf.keras.layers.Dropout(config["dropout"])(dense)
-        out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')(dense_dropout)
-        model = tf.keras.Model(inputs=[input_sentence], outputs=[out])
-        return model
-    else:
-        input_sentence = tf.keras.layers.Input(shape=(maxlen,), dtype="int64")
-        word_embeddings = tf.keras.layers.Embedding(word_vectors.shape[0], 
-                                                    word_vectors.shape[1], 
-                                                    embeddings_initializer=tf.keras.initializers.Constant(word_vectors), 
-                                                    trainable=config["fine_tune_word_embeddings"], 
-                                                    mask_zero=True, 
-                                                    name="word_embeddings")(input_sentence)
-        word_embeddings_flatten = tf.keras.layers.Flatten()(word_embeddings)
-        dense = tf.keras.layers.Dense(hyperparameters_tuning["units"], 
-                                      activation='relu')(word_embeddings_flatten)
-        if hyperparameters_tuning["dropout"] == True:
-            dense = tf.keras.layers.Dropout(config["dropout"])(dense)
-        out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')(dense)
-        model = tf.keras.Model(inputs=[input_sentence], outputs=[out])
-        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=hyperparameters_tuning["lr"]), 
-                      loss=['binary_crossentropy'], 
-                      metrics=['accuracy']) 
-        return model
+    conv_2 = layers.Conv2D(filters = 100, 
+                            kernel_size = (4, 300),
+                            strides = 1,
+                            dilation_rate = 1,
+                            padding = "valid",
+                            data_format = "channels_first",
+                            name = "conv2D_2")(word_embeddings_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1 x 1
+    conv2_reshaped = tf.keras.backend.squeeze(conv_2, axis=3) # batch_size x 100 x sent len - filter_sizes[n] + 1
+    conv2_reshaped_relu = layers.ReLU()(conv2_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1
+    max_pool_2 = layers.GlobalMaxPooling1D(data_format="channels_first",
+                                            name="maxpool1D_2")(conv2_reshaped_relu) # batch size x n_filters
 
-class train_mlp(object):
-    def __init__(self, config) -> None:
+    conv_3 = layers.Conv2D(filters = 100, 
+                            kernel_size = (5, 300),
+                            strides = 1,
+                            dilation_rate = 1,
+                            padding = "valid",
+                            data_format = "channels_first",
+                            name = "conv2D_3")(word_embeddings_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1 x 1
+    conv3_reshaped = tf.keras.backend.squeeze(conv_3, axis=3) # batch_size x 100 x sent len - filter_sizes[n] + 1
+    conv3_reshaped_relu = layers.ReLU()(conv3_reshaped) # batch_size x 100 x sent len - filter_sizes[n] + 1
+    max_pool_3 = layers.GlobalMaxPooling1D(data_format="channels_first",
+                                            name="maxpool1D_3")(conv3_reshaped_relu) # batch size x n_filters
+
+    concat = layers.Concatenate(axis=1, name="concatenate")([max_pool_1, max_pool_2, max_pool_3])
+    concat_dropout = layers.Dropout(rate=config["dropout"], seed=config["seed_value"], name="dropout")(concat)       
+    out = layers.Dense(1, activation='sigmoid', name='output')(concat_dropout)
+
+    model = Model(inputs=[input_sentence], outputs=[out])
+
+    if config["optimizer"] == "adam":    
+        model.compile(tf.keras.optimizers.Adam(learning_rate=config["learning_rate"]), loss=['binary_crossentropy'], metrics=['accuracy'])
+    elif config["optimizer"] == "adadelta":
+        model.compile(tf.keras.optimizers.Adadelta(learning_rate=config["learning_rate"], rho=0.95, epsilon=1e-06), loss=['binary_crossentropy'], metrics=['accuracy'])
+    return model
+
+class train_cnn(object):
+    def __init__(self, config):
         self.config = config
-        self.vectorize_layer = None
-        self.maxlen = None
-        self.model = None
-        self.word_vectors = None
-
+    
     def vectorize(self, sentences):
         """
-        tokenize each preprocessed sentence in dataset as sentence.split()
-        encode each tokenized sentence as per vocabulary
-        right pad each encoded tokenized sentence with 0 upto max_tokenized_sentence_len the dataset 
+        tokenize each preprocessed sentence in dataset using bert tokenizer
         """
-        return self.vectorize_layer(np.array(sentences)).numpy()
+        tokenizer = AutoTokenizer.from_pretrained("vinai/bertweet-covid19-base-cased", use_fast=False)
+        max_len = 0
+        input_ids = []
+        for sentence in sentences:
+            tokenized_context = tokenizer.encode(sentence)
+            input_id = tokenized_context
+            input_ids.append(input_id)
+            if len(input_id) > max_len:
+                max_len = len(input_id)
+        for index, input_id in enumerate(input_ids):
+            padding_length = max_len - len(input_ids[index])
+            input_ids[index] = input_ids[index] + ([0] * padding_length)
+        return np.array(input_ids)
     
     def pad(self, sentences, maxlen):
         """
@@ -103,34 +112,13 @@ class train_mlp(object):
         prob = np.concatenate((pred_prob_0, pred_prob_1), axis=1)
         return prob
 
-    def build_model(self, hp):
-        units = hp.Int("units", min_value=1, max_value=129, step=8)
-        lr = hp.Float("lr", min_value=1e-5, max_value=3e-2, sampling="log")
-        # activation = hp.Choice("activation", ["relu", "tanh"])
-        dropout = hp.Boolean("dropout")
-        hyperparameters_tuning = {
-                                 "units":units,
-                                 "lr":lr,
-                                 "dropout":dropout
-                                 }
-        model = mlp(self.config, 
-                    self.word_vectors, 
-                    self.maxlen, 
-                    hyperparameters_tuning=hyperparameters_tuning)
-        model.summary()
-        return model
-    
     def train_model(self, train_dataset, val_datasets, test_datasets, word_index, word_vectors):
 
         # Make paths
         if not os.path.exists("assets/training_history/"):
             os.makedirs("assets/training_history/")
-        
-        #create vocab and define the vectorize layer
-        vocab = [key for key in word_index.keys()]
-        self.vectorize_layer = tf.keras.layers.experimental.preprocessing.TextVectorization(standardize=None, split='whitespace', vocabulary=vocab)
 
-        # Create Train and Val datasets
+        #Create train, val, and test datasets
         train_sentences = self.vectorize(train_dataset["sentence"])
         train_sentiment_labels = np.array(train_dataset["sentiment_label"])
         val_sentences = self.vectorize(val_datasets["val_dataset"]["sentence"])
@@ -165,70 +153,34 @@ class train_mlp(object):
                                                         mode="min",
                                                         baseline=None, 
                                                         restore_best_weights=True)
-        my_callbacks = [
-                        # early_stopping_callback,
-                        AdditionalValidationSets(additional_validation_datasets, self.config)
-                       ]
-        
-        # #model compilation and summarization
-        # model = mlp(self.config, word_vectors, maxlen)
-        # model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
-        #               loss=['binary_crossentropy'], 
-        #               metrics=['accuracy']) 
-        # model.summary()
-        # self.model = model
+        my_callbacks = [early_stopping_callback, 
+                        AdditionalValidationSets(additional_validation_datasets, self.config)]
 
-        #Hyperparameter tuning
-        self.word_vectors = word_vectors
-        self.build_model(keras_tuner.HyperParameters())
-        tuner = keras_tuner.RandomSearch(
-                                        hypermodel=self.build_model,
-                                        objective="val_loss",
-                                        max_trials=3,
-                                        executions_per_trial=2,
-                                        overwrite=True,
-                                        )
-        tuner.search_space_summary()
+        #model compilation and summarization
+        model = cnn(self.config, word_vectors)
+        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+                                                        loss=['binary_crossentropy'], 
+                                                        metrics=['accuracy'])    
+        model.summary()
+        self.model = model
 
         # Train the model
         if self.config["train_model"] == True:
-            # self.model.fit(x=train_dataset[0], 
-            #                 y=train_dataset[1], 
-            #                 batch_size=self.config["mini_batch_size"], 
-            #                 epochs=self.config["train_epochs"], 
-            #                 validation_data=val_dataset, 
-            #                 callbacks=my_callbacks)
-            tuner.search(train_dataset[0], 
-                         train_dataset[1],
-                         batch_size=self.config["mini_batch_size"],
-                         epochs=self.config["train_epochs"], 
-                         validation_data=val_dataset)
-            tuner.results_summary()
-            best_hps = tuner.get_best_hyperparameters(5)
-            self.model = self.build_model(best_hps[0])
-            self.model.fit(x=train_dataset[0], 
-                            y=train_dataset[1], 
-                            batch_size=self.config["mini_batch_size"], 
-                            epochs=self.config["train_epochs"], 
-                            validation_data=val_dataset, 
-                            callbacks=my_callbacks)
+            model.fit(x=train_dataset[0], 
+                    y=train_dataset[1], 
+                    batch_size=self.config["mini_batch_size"], 
+                    epochs=self.config["train_epochs"], 
+                    validation_data=val_dataset, 
+                    callbacks=my_callbacks)
 
             # Save trained model
             if not os.path.exists("assets/trained_models/"):
                 os.makedirs("assets/trained_models/")
-            self.model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
-
-            # Save the configurations
-            self.config["hyperparameters"] = best_hps[0]
-            if not os.path.exists("assets/configurations/"):
-                os.makedirs("assets/configurations/")
-            with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
-                pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
         
         if self.config["evaluate_model"] == True:
 
             #load model
-            self.model = self.build_model(self.config["hyperparameters"])
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
             # Results to be created after evaluation
@@ -264,7 +216,6 @@ class train_mlp(object):
             print("\nLIME explanations")
 
             #Load trained model
-            self.model = self.build_model(self.config["hyperparameters"])
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
             #Results to be created after explanation
@@ -323,3 +274,5 @@ class train_mlp(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
+
+        return model

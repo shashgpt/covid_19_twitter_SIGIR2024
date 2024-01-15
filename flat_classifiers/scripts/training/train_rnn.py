@@ -17,7 +17,6 @@ from scripts.training.rnn_models.bilstm import bilstm
 from scripts.training.rnn_models.gru import gru
 from scripts.training.rnn_models.bigru import bigru
 
-
 class train_rnn(object):
     def __init__(self, config):
         self.config = config
@@ -209,5 +208,3 @@ class train_rnn(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
-
-        return model

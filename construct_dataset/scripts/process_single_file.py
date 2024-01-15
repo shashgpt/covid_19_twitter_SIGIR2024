@@ -228,9 +228,9 @@ class Construct_covid19_dataset(object):
                         "counter_negative_a_nonetheless_b_no_contrast":0,
                         }
 
-        # Make directories for output data
-        if not os.path.exists("datasets/corpus/corona_tweets_"+self.config["folder_number"]):
-            os.makedirs("datasets/corpus/corona_tweets_"+self.config["folder_number"])
+        # # Make directories for output data
+        # if not os.path.exists("datasets/corpus/corona_tweets_"+self.config["folder_number"]):
+        #     os.makedirs("datasets/corpus/corona_tweets_"+self.config["folder_number"])
         
         # # Create log file
         # log_file_name = "preprocessed_data_log.log"
@@ -239,15 +239,15 @@ class Construct_covid19_dataset(object):
         old_stdout = sys.stdout
         now = datetime.now()
         current_time = now.strftime("%H:%M:%S")
-        if not os.path.exists("assets/logs/corona_tweets_"+self.config["folder_number"]+"/"):
-            os.makedirs("assets/logs/corona_tweets_"+self.config["folder_number"]+"/")
-        log_file = open("assets/logs/corona_tweets_"+self.config["folder_number"]+"/"+self.config["asset_name"]+"_"+current_time+".txt","w")
+        # if not os.path.exists("assets/logs/"+self.config["folder_number"]+"/"):
+        #     os.makedirs("assets/logs/corona_tweets_"+self.config["folder_number"]+"/")
+        log_file = open("assets/logs/"+self.config["asset_name"]+"_"+current_time+".txt","w")
         sys.stdout = log_file
 
         # Setup progress bar for the file
-        file_name = "corona_tweets_"+self.config["folder_number"]+"_data.txt"
+        file_name = "tweets.txt"
         try:
-            with open("datasets/corpus"+"/corona_tweets_"+self.config["folder_number"]+"/"+file_name,'r') as inf:
+            with open("datasets/corpus/"+file_name,'r') as inf:
                 no_of_lines = 0
                 for line in inf: 
                     no_of_lines += 1
@@ -260,7 +260,7 @@ class Construct_covid19_dataset(object):
         tweet_index = 0
 
         # Select a tweet object from the file
-        with open("datasets/corpus"+"/corona_tweets_"+self.config["folder_number"]+"/corona_tweets_"+self.config["folder_number"]+"_data.txt","r") as inf:
+        with open("datasets/corpus/"+file_name,"r") as inf:
             print("\n")
 
             # Create a progress bar
@@ -283,10 +283,10 @@ class Construct_covid19_dataset(object):
                             tweet_dict_obj = eval(line)
                             tweet = tweet_dict_obj['text']
                             tweet_id = tweet_dict_obj['id']
-                            # language = tweet_dict_obj['lang']
+                            language = tweet_dict_obj['lang']
                         except:
-                            print("\n"+line)
-                            print("\nCould not extract required data from tweet obj")
+                            # print("\n"+line)
+                            # print("\nCould not extract relevant fields")
                             continue
 
                         # # Preprocess the tweet (remove hashtages, URLs, reserved keywords, @mentions and spaces)
@@ -304,21 +304,21 @@ class Construct_covid19_dataset(object):
                             emojis = emoji_summary_dict['emoji'][0]
                             emoji_names = emoji_summary_dict['emoji_text'][0]
                         except:
-                            print("\n"+line)
-                            print("\nCould not extract emojis")
+                            # print("\n"+line)
+                            # print("\nCould not extract emojis")
                             continue
 
-                        # # Check if the tweet is in English
-                        # if language != "en":
-                        #     # print("\n"+line)
-                        #     # print("\nTweet is not in English")
-                        #     pbar.update()
-                        #     continue
+                        # Check if the tweet is in English
+                        if language != "en":
+                            # print("\n"+line)
+                            # print("\nTweet is not in English")
+                            pbar.update()
+                            continue
 
                         # Check if the tweet contains atleast one emoji
                         if len(emojis) == 0:
-                            print("\n"+line)
-                            print("\nTweet does not contains any emojis")
+                            # print("\n"+line)
+                            # print("\nTweet does not contains any emojis")
                             pbar.update()
                             continue
 
@@ -327,8 +327,8 @@ class Construct_covid19_dataset(object):
                         for emoji in emojis:
                             emoji_string = emoji_string + emoji
                         if not tweet.endswith(emoji_string):
-                            print("\n"+line)
-                            print("\nTweet does not ends with emojis")
+                            # print("\n"+line)
+                            # print("\nTweet does not ends with emojis")
                             pbar.update()
                             continue
                         
@@ -338,17 +338,17 @@ class Construct_covid19_dataset(object):
                             if emoji in emo_tag1200_emoji_list:
                                 count_of_emojis_in_emotag1200 += 1
                         if count_of_emojis_in_emotag1200 == 0:
-                            print("\n"+line)
-                            print("\nTweet does not have any emojis in emotag1200 table")
+                            # print("\n"+line)
+                            # print("\nTweet does not have any emojis in emotag1200 table")
                             pbar.update()
                             continue
                             
-                        # # Check if the tweet contains equal to or more than 28 chars (SPAM check)
-                        # if len(tweet) < 28:
-                        #     print("\n"+line)
-                        #     print("\nTweet contains less than 28 characters")
-                        #     pbar.update()
-                        #     continue
+                        # Check if the tweet contains equal to or more than 28 chars (SPAM check)
+                        if len(tweet) < 28:
+                            print("\n"+line)
+                            print("\nTweet contains less than 28 characters")
+                            pbar.update()
+                            continue
                             
                         # # Check if the tweet is not a duplicate tweet 
                         # length_before = len(tweets_hash_table)
@@ -380,8 +380,8 @@ class Construct_covid19_dataset(object):
                         elif agg_emotion_score < -2.83:
                             sentiment_label = -1
                         else:
-                            print("\n"+line)
-                            print("\nTweet agg. emotion score is between -2.83 to 2.83")
+                            # print("\n"+line)
+                            # print("\nTweet agg. emotion score is between -2.83 to 2.83")
                             pbar.update()
                             continue                        
 
@@ -397,8 +397,8 @@ class Construct_covid19_dataset(object):
                             elif vader_score_sentence["compound"] <= -0.05:
                                 vader_sentiment_sentence = -1 # Negative sentiment
                         except:
-                            print("\n"+line)
-                            print("\nCould not calculate VADER score for the tweet")
+                            # print("\n"+line)
+                            # print("\nCould not calculate VADER score for the tweet")
                             continue
 
                         # # Calculate the ROBERTA sentiment label for the sentence
@@ -423,8 +423,8 @@ class Construct_covid19_dataset(object):
                         if vader_sentiment_sentence != sentiment_label:
                             self.counters["vader_accuracy"].append(0)
                             self.counters["consistency_check"].append(0)
-                            print("\n"+line)
-                            print("\nVADER sentiment label is not equal to emoji sentiment label")
+                            # print("\n"+line)
+                            # print("\nVADER sentiment label is not equal to emoji sentiment label")
                             pbar.update()
                             continue
                         elif vader_sentiment_sentence == sentiment_label:
@@ -746,7 +746,7 @@ class Construct_covid19_dataset(object):
                         # Save all the counters
                         if not os.path.exists("assets/processed_dataset"):
                             os.makedirs("assets/processed_dataset")
-                        with open("assets/processed_dataset/"+self.config["asset_name"]+"_corona_tweets_"+self.config["folder_number"]+"_counters.pickle", 'wb') as handle:
+                        with open("assets/processed_dataset/"+self.config["asset_name"]+"_counters.pickle", 'wb') as handle:
                             pickle.dump(self.counters, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
                         # # Apply the break conditions on the counter
@@ -853,11 +853,11 @@ class Construct_covid19_dataset(object):
         sys.stdout = old_stdout
 
         # Save the output data
-        with open("assets/processed_dataset/"+self.config["asset_name"]+"_corona_tweets_"+self.config["folder_number"]+"_processed_data.pickle", 'wb') as handle:
+        with open("assets/processed_dataset/"+self.config["asset_name"]+"_processed_data.pickle", 'wb') as handle:
             pickle.dump(self.output_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
         
         # Save the counters
-        with open("assets/processed_dataset/"+self.config["asset_name"]+"_corona_tweets_"+self.config["folder_number"]+"_counters.pickle", 'wb') as handle:
+        with open("assets/processed_dataset/"+self.config["asset_name"]+"_counters.pickle", 'wb') as handle:
             pickle.dump(self.counters, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
         # # Apply the break conditions on the counter

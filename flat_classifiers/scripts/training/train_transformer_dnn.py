@@ -12,27 +12,6 @@ from tqdm import tqdm
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-class TransformerBlock(layers.Layer):
-    def __init__(self, embed_dim, num_heads, rate=0.1):
-        super().__init__()
-        self.att = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
-        ff_dim = num_heads*4
-        self.ffn = tf.keras.Sequential(
-            [layers.Dense(ff_dim, activation="relu"), layers.Dense(embed_dim),]
-        )
-        self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
-        self.dropout1 = layers.Dropout(rate)
-        self.dropout2 = layers.Dropout(rate)
-
-    def call(self, inputs, training):
-        attn_output = self.att(inputs, inputs)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(inputs + attn_output)
-        ffn_output = self.ffn(out1)
-        ffn_output = self.dropout2(ffn_output, training=training)
-        return self.layernorm2(out1 + ffn_output)
-
 class TokenAndPositionEmbedding(layers.Layer):
     def __init__(self, maxlen, vocab_size, embed_dim):
         super().__init__()
@@ -45,6 +24,50 @@ class TokenAndPositionEmbedding(layers.Layer):
         positions = self.pos_emb(positions)
         x = self.token_emb(x)
         return x + positions
+
+class TransformerBlock(Model):
+    def __init__(self, config, embed_dim, maxlen, num_heads, vocab_size, rate=0.1):
+        super().__init__()
+        self.config = config
+
+        # self.input_layer = layers.Input(shape=(maxlen,), dtype="float32")
+        self.embedding_layer = TokenAndPositionEmbedding(maxlen, vocab_size, embed_dim)
+        self.att = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
+        ff_dim = num_heads*4
+        self.ffn = tf.keras.Sequential([layers.Dense(ff_dim, activation="relu"), 
+                                        layers.Dense(embed_dim),])
+        self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
+        self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
+        self.dropout1 = layers.Dropout(rate)
+        self.dropout2 = layers.Dropout(rate)
+        self.global_average_pooling_1d = layers.GlobalAveragePooling1D()
+        self.dense = tf.keras.layers.Dense(20, activation='relu')
+        self.out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')
+
+    def call(self, inputs, training):
+        # inputs = self.input_layer(inputs)
+        word_embeddings = self.embedding_layer(inputs)
+        attn_output = self.att(word_embeddings, word_embeddings)
+        attn_output = self.dropout1(attn_output, training=training)
+        out1 = self.layernorm1(word_embeddings + attn_output)
+        ffn_output = self.ffn(out1)
+        ffn_output = self.dropout2(ffn_output, training=training)
+        layernorm2 = self.layernorm2(out1 + ffn_output)
+        pooled_output = self.global_average_pooling_1d(layernorm2)
+        dropout = self.dropout2(pooled_output)
+        dense = self.dense(dropout)
+        x = self.dropout2(dense)
+        out = self.out(x)
+        return out
+
+    def build_model(self, input_shape):
+        input_data = layers.Input(shape=(input_shape,), dtype="float32")
+        model = tf.keras.Model(inputs=input_data, outputs=self.call(input_data, training=False))
+        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+                                                        loss=['binary_crossentropy'], 
+                                                        metrics=['accuracy'])
+        model.summary()
+        return model
 
 class train_transformer(object):
     def __init__(self, config):
@@ -128,21 +151,21 @@ class train_transformer(object):
         #model compilation and summarization
         vocab_size = len(vocab)
         embed_dim = word_vectors.shape[1]
-        inputs = layers.Input(shape=(maxlen,))
-        embedding_layer = TokenAndPositionEmbedding(maxlen, vocab_size, embed_dim)
-        x = embedding_layer(inputs)
-        transformer_block = TransformerBlock(embed_dim, 6)
-        x = transformer_block(x)
-        x = layers.GlobalAveragePooling1D()(x)
-        x = layers.Dropout(0.1)(x)
-        x = layers.Dense(20, activation="relu")(x)
-        x = layers.Dropout(0.1)(x)
-        outputs = layers.Dense(1, activation='sigmoid', name='output')(x)
-        model = tf.keras.Model(inputs=inputs, outputs=outputs)
-        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
-                      loss=['binary_crossentropy'], 
-                      metrics=['accuracy'])    
-        model.summary()
+        # model = TransformerBlock(config=self.config, 
+        #                         embed_dim=embed_dim, 
+        #                         maxlen=maxlen, 
+        #                         num_heads=6, 
+        #                         vocab_size=vocab_size)
+        # model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+        #                                                 loss=['binary_crossentropy'], 
+        #                                                 metrics=['accuracy'])
+        # model.build(input_shape = train_dataset[0].shape)
+        # model.summary()
+        model = TransformerBlock(config=self.config, 
+                                embed_dim=embed_dim, 
+                                maxlen=maxlen, 
+                                num_heads=6, 
+                                vocab_size=vocab_size).build_model(input_shape = train_dataset[0].shape[1])
         self.model = model
 
         # Train the model
@@ -261,5 +284,3 @@ class train_transformer(object):
             os.makedirs("assets/configurations/")
         with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
             pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-        return model

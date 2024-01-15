@@ -220,10 +220,6 @@ class train_mlp(object):
 
             # Save the configurations
             self.config["hyperparameters"] = best_hps[0]
-            if not os.path.exists("assets/configurations/"):
-                os.makedirs("assets/configurations/")
-            with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
-                pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)
         
         if self.config["evaluate_model"] == True:
 
@@ -323,3 +319,8 @@ class train_mlp(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
+        
+        if not os.path.exists("assets/configurations/"):
+            os.makedirs("assets/configurations/")
+        with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
+            pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)

@@ -1,56 +1,39 @@
-import os
-import shutil
-import pickle
-import numpy as np
+from tensorflow.keras.models import Model
+from tensorflow.keras import layers
+from tensorflow.keras.layers import Embedding, Dropout, Dense, Input, Softmax, Lambda
+from tensorflow.keras.initializers import RandomUniform
+from tensorflow.keras.initializers import Constant
 import tensorflow as tf
-from tensorflow import keras
+import numpy as np
 import pandas as pd
+import os
+import pickle
 from lime import lime_text
 import traceback
 from tqdm import tqdm
-from tensorflow.keras import layers
-from tensorflow.keras.models import Model
-from transformers import TFAutoModel, BertConfig, AutoTokenizer
+from transformers import TFAutoModel
+from transformers import AutoTokenizer
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-class BERTweet_transformer(Model):
-    def __init__(self, config, num_heads, maxlen, rate=0.1, **kwargs):
+class BERTweet_mlp(tf.keras.Model):
+    def __init__(self, config, **kwargs):
         super().__init__()
         self.config = config
-        self.bert_configuration = BertConfig().to_dict()
-        self.bert_encoder = TFAutoModel.from_pretrained("vinai/bertweet-covid19-base-cased",
-                                                        config=self.bert_configuration)
+        self.bert_encoder = TFAutoModel.from_pretrained("vinai/bertweet-covid19-base-cased")
         for layer in self.bert_encoder.layers:
             layer.trainable = config["fine_tune_word_embeddings"]
 
-        self.att = layers.MultiHeadAttention(num_heads=num_heads, 
-                                             key_dim=self.bert_configuration["hidden_size"])
-        ff_dim = num_heads*4
-        self.ffn = tf.keras.Sequential(
-            [layers.Dense(ff_dim, activation="relu"), layers.Dense(self.bert_configuration["hidden_size"]),]
-        )
-        self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
-        self.dropout1 = layers.Dropout(rate)
-        self.dropout2 = layers.Dropout(rate)
-        self.pos_emb = layers.Embedding(input_dim=maxlen, output_dim=self.bert_configuration["hidden_size"])
-        self.global_average_pooling_1d = layers.GlobalAveragePooling1D()
-        self.dense = tf.keras.layers.Dense(20, activation='relu')
-        self.out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')
+        self.reshape = tf.keras.layers.Flatten()
+        self.dense = tf.keras.layers.Dense(128, activation='relu')
+        self.out = tf.keras.layers.Dense(1, activation="sigmoid")
     
     def compute_attention_masks(self, input_ids):
         zero = tf.constant(0, dtype=tf.int64)
         attention_masks = tf.cast(tf.not_equal(input_ids, zero), dtype=tf.int64)
         return attention_masks
     
-    def compute_positional_embeddings(self, input_ids, word_embeddings):
-        maxlen = tf.shape(input_ids)[-1]
-        positions = tf.range(start=0, limit=maxlen, delta=1)
-        positions = self.pos_emb(positions)
-        return word_embeddings + positions
-    
-    def call(self, input_ids, training, attention_masks=None, **kwargs):
+    def call(self, input_ids, attention_masks=None, **kwargs):
         
         #input
         input_ids = tf.cast(input_ids, dtype=tf.int64)
@@ -61,26 +44,17 @@ class BERTweet_transformer(Model):
 
         #bert_tweet output
         word_embeddings = self.bert_encoder(input_ids, attention_masks).last_hidden_state
-       
-        #transformer block
-        postional_embeddings = self.compute_positional_embeddings(input_ids, word_embeddings)
-        attn_output = self.att(postional_embeddings, postional_embeddings)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(postional_embeddings + attn_output)
-        ffn_output = self.ffn(out1)
-        ffn_output = self.dropout2(ffn_output, training=training)
-        layernorm2 = self.layernorm2(out1 + ffn_output)
-        pooled_output = self.global_average_pooling_1d(layernorm2)
-        dropout = self.dropout2(pooled_output)
-        dense = self.dense(dropout)
-        x = self.dropout2(dense)
-        out = self.out(x)
+
+        word_embeddings_flatten = self.reshape(word_embeddings)
+        dense = self.dense(word_embeddings_flatten)
+        out = self.out(dense)
         return out
 
-class train_bertweet_transformer(object):
+
+class train_cnn(object):
     def __init__(self, config):
         self.config = config
-
+    
     def vectorize(self, sentences):
         """
         tokenize each preprocessed sentence in dataset using bert tokenizer
@@ -98,7 +72,7 @@ class train_bertweet_transformer(object):
             padding_length = max_len - len(input_ids[index])
             input_ids[index] = input_ids[index] + ([0] * padding_length)
         return np.array(input_ids)
-
+    
     def pad(self, sentences, maxlen):
         """
         right pad sequence with 0 till max token length sentence
@@ -112,13 +86,13 @@ class train_bertweet_transformer(object):
         pred_prob_0 = 1 - pred_prob_1
         prob = np.concatenate((pred_prob_0, pred_prob_1), axis=1)
         return prob
-    
-    def train_model(self, train_dataset, val_datasets, test_datasets):
 
-        #make paths
+    def train_model(self, train_dataset, val_datasets, test_datasets, word_index, word_vectors):
+
+        # Make paths
         if not os.path.exists("assets/training_history/"):
             os.makedirs("assets/training_history/")
-        
+
         #Create train, val, and test datasets
         train_sentences = self.vectorize(train_dataset["sentence"])
         train_sentiment_labels = np.array(train_dataset["sentiment_label"])
@@ -135,17 +109,18 @@ class train_bertweet_transformer(object):
         val_dataset = (val_sentences, val_sentiment_labels)
         test_dataset = (test_sentences, test_sentiment_labels)
 
-        #create additional validation datasets
+        # Create additional validation datasets
         additional_validation_datasets = []
         for key, value in test_datasets.items():
             # if key in ["test_dataset_one_rule"]:
             #     continue
             sentences = self.vectorize(test_datasets[key]["sentence"])
+            sentences = self.pad(sentences, maxlen)
             sentiment_labels = np.array(test_datasets[key]["sentiment_label"])
             dataset = (sentences, sentiment_labels, key)
             additional_validation_datasets.append(dataset)
 
-        #define callbacks
+        # Define callbacks
         early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',  # 1. Calculate val_loss_1 
                                                         min_delta = 0,                  # 2. Check val_losses for next 10 epochs 
                                                         patience=10,                    # 3. Stop training if none of the val_losses are lower than val_loss_1
@@ -153,42 +128,34 @@ class train_bertweet_transformer(object):
                                                         mode="min",
                                                         baseline=None, 
                                                         restore_best_weights=True)
-        my_callbacks = [
-                        # early_stopping_callback, 
-                        AdditionalValidationSets(additional_validation_datasets, self.config)
-                        ]
-        
+        my_callbacks = [early_stopping_callback, 
+                        AdditionalValidationSets(additional_validation_datasets, self.config)]
+
         #model compilation and summarization
-        model = BERTweet_transformer(self.config,
-                                     maxlen=self.maxlen,
-                                    num_heads=6)
-        model.build(input_shape = train_dataset[0].shape)
+        model = cnn(self.config, word_vectors)
+        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+                                                        loss=['binary_crossentropy'], 
+                                                        metrics=['accuracy'])    
         model.summary()
         self.model = model
 
-        #Train the model
+        # Train the model
         if self.config["train_model"] == True:
-            self.model.fit(x=train_dataset[0], 
+            model.fit(x=train_dataset[0], 
                     y=train_dataset[1], 
                     batch_size=self.config["mini_batch_size"], 
                     epochs=self.config["train_epochs"], 
                     validation_data=val_dataset, 
                     callbacks=my_callbacks)
 
-            #Save trained model
+            # Save trained model
             if not os.path.exists("assets/trained_models/"):
                 os.makedirs("assets/trained_models/")
-            self.model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
-
-            #Save the configuration parameters for this run (marks the creation of an asset)
-            if not os.path.exists("assets/configurations/"):
-                os.makedirs("assets/configurations/")
-            with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
-                pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
         
         if self.config["evaluate_model"] == True:
 
-            #Load model
+            #load model
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
             # Results to be created after evaluation
@@ -199,7 +166,7 @@ class train_bertweet_transformer(object):
                         'sentiment_probability_output':[], 
                         'sentiment_prediction_output':[]}
 
-            #Evaluation and predictions
+            # Evaluation and predictions
             evaluations = self.model.evaluate(x=test_dataset[0], y=test_dataset[1])
             print("test loss, test acc:", evaluations)
             predictions = self.model.predict(x=test_dataset[0])
@@ -214,7 +181,7 @@ class train_bertweet_transformer(object):
                 prediction = np.rint(prediction)
                 results['sentiment_prediction_output'].append(prediction[0])
 
-            #Save the results
+            # Save the results
             if not os.path.exists("assets/results/"):
                 os.makedirs("assets/results/")
             with open("assets/results/"+self.config["asset_name"]+".pickle", 'wb') as handle:
@@ -246,12 +213,7 @@ class train_bertweet_transformer(object):
                 probability = [1 - probabilities[index].tolist()[0], probabilities[index].tolist()[0]]
                 tokenized_sentence = test_datapoint.split()
                 try:
-                    exp = explainer.explain_instance(
-                                                    test_datapoint, 
-                                                    self.prediction, 
-                                                    num_features = len(tokenized_sentence), 
-                                                    num_samples = self.config["lime_no_of_samples"]
-                                                    )
+                    exp = explainer.explain_instance(test_datapoint, self.prediction, num_features = len(tokenized_sentence), num_samples=self.config["lime_no_of_samples"])
                 except:
                     traceback.print_exc()
                     text = test_datapoint
@@ -287,4 +249,3 @@ class train_bertweet_transformer(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
-        

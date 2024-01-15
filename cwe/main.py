@@ -23,6 +23,7 @@ from scripts.dataset_processing.dataset_division import Dataset_division
 
 from scripts.training.train_bertweet_mlp import train_bertweet_mlp
 from scripts.training.train_bertweet_transformer import train_bertweet_transformer
+from scripts.training.train_bertweet_cnn import train_bertweet_cnn
 
 #disable warnings
 logging.disable(logging.WARNING)
@@ -136,4 +137,6 @@ if __name__=='__main__':
         train_bertweet_mlp(config).train_model(train_dataset, val_datasets, test_datasets)
     elif config["model_name"] == "bertweet_transformer":
         train_bertweet_transformer(config).train_model(train_dataset, val_datasets, test_datasets)
+    elif config["model_name"] == "bertweet_cnn":
+        train_bertweet_cnn(config).train_model(train_dataset, val_datasets, test_datasets)
     

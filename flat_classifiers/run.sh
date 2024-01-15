@@ -5,7 +5,8 @@
 #SBATCH --time=UNLIMITED
 
 # #When PROTOTYPING interactively
-# asset="mlp_1e5_learning_rate_200_epochs_hyperparameters_tuning"
+# asset="transformer_1e5LearningRate_200Epochs_6Heads_Prototype"
+# model="transformer"
 # # timestamp="$(date +"%T")"
 # # mkdir -p "assets/logs"
 # # cd "assets/logs"
@@ -18,8 +19,8 @@
 # CUDNN_PATH=$(dirname $(python -c "import nvidia.cudnn;print(nvidia.cudnn.__file__)"))
 # export LD_LIBRARY_PATH=$CUDNN_PATH/lib:$CONDA_PREFIX/lib/:$LD_LIBRARY_PATH
 # python3 main.py \
-# --asset_name "$asset_prototype" \
-# --model_name "mlp" \
+# --asset_name $asset \
+# --model_name $model \
 # --seed_value 11 \
 # --dataset_name "covid19-twitter" \
 # --dataset_path "datasets/covid19-twitter/raw_dataset.pickle" \
@@ -36,7 +37,8 @@
 # --lime_no_of_samples 1000
 
 #When experimenting
-asset="mlp_200Epochs_HyperparametersTuningOnValLoss"
+asset="bigru_1e5LearningRate_1000Epochs"
+model="bigru"
 timestamp="$(date +"%T")"
 mkdir -p "assets/logs"
 cd "assets/logs"
@@ -50,7 +52,7 @@ CUDNN_PATH=$(dirname $(python -c "import nvidia.cudnn;print(nvidia.cudnn.__file_
 export LD_LIBRARY_PATH=$CUDNN_PATH/lib:$CONDA_PREFIX/lib/:$LD_LIBRARY_PATH
 python3 main.py \
 --asset_name $asset \
---model_name "mlp" \
+--model_name $model \
 --seed_value 11 \
 --dataset_name "covid19-twitter" \
 --dataset_path "datasets/covid19-twitter/raw_dataset.pickle" \
@@ -62,6 +64,6 @@ python3 main.py \
 --optimizer "adam" \
 --learning_rate 1e-5 \
 --mini_batch_size 50 \
---train_epochs 200 \
+--train_epochs 1000 \
 --dropout 0.3 \
 --lime_no_of_samples 1000

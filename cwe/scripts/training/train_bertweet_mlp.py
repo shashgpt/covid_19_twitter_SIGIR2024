@@ -38,7 +38,7 @@ class BERTweet_mlp(tf.keras.Model):
             attention_masks = self.compute_attention_masks(input_ids)
 
         #bert_tweet output
-        word_embeddings = self.bert_encoder(input_ids, attention_masks)[1]
+        word_embeddings = self.bert_encoder(input_ids, attention_masks).last_hidden_state
 
         word_embeddings_flatten = self.reshape(word_embeddings)
         dense = self.dense(word_embeddings_flatten)

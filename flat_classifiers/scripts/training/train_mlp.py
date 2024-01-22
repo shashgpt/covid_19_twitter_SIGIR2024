@@ -10,33 +10,6 @@ import keras_tuner
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-# class mlp(tf.keras.Model):
-#     def __init__(self, config, word_vectors, **kwargs):
-#         super().__init__()
-#         self.config = config
-#         self.word_vectors = word_vectors
-
-#         vocab_size = self.word_vectors.shape[0]
-#         embedding_dimensions = self.word_vectors.shape[1]
-
-#         #layers
-#         self.word_embeddings = tf.keras.layers.Embedding(vocab_size,
-#                                                     embedding_dimensions,
-#                                                     embeddings_initializer=tf.keras.initializers.Constant(word_vectors),
-#                                                     trainable=self.config["fine_tune_word_embeddings"],
-#                                                     mask_zero=True,
-#                                                     name="word_embeddings")
-#         self.reshape = tf.keras.layers.Flatten()
-#         self.dense = tf.keras.layers.Dense(128, activation='relu')
-#         self.out = tf.keras.layers.Dense(1, activation="sigmoid")
-
-#     def call(self, input):
-#         word_embeddings = self.word_embeddings(input)
-#         word_embeddings_flatten = self.reshape(word_embeddings)
-#         dense = self.dense(word_embeddings_flatten)
-#         out = self.out(dense)
-#         return out
-
 def mlp(config, word_vectors, maxlen, hyperparameters_tuning=None):
     
     if hyperparameters_tuning == None:
@@ -48,7 +21,7 @@ def mlp(config, word_vectors, maxlen, hyperparameters_tuning=None):
                                                     mask_zero=True, 
                                                     name="word_embeddings")(input_sentence)
         word_embeddings_flatten = tf.keras.layers.Flatten()(word_embeddings)
-        dense = tf.keras.layers.Dense(128, activation='relu')(word_embeddings_flatten)
+        dense = tf.keras.layers.Dense(config["hidden_units"], activation='relu')(word_embeddings_flatten)
         dense_dropout = tf.keras.layers.Dropout(config["dropout"])(dense)
         out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')(dense_dropout)
         model = tf.keras.Model(inputs=[input_sentence], outputs=[out])
@@ -64,13 +37,14 @@ def mlp(config, word_vectors, maxlen, hyperparameters_tuning=None):
         word_embeddings_flatten = tf.keras.layers.Flatten()(word_embeddings)
         dense = tf.keras.layers.Dense(hyperparameters_tuning["units"], 
                                       activation='relu')(word_embeddings_flatten)
-        if hyperparameters_tuning["dropout"] == True:
-            dense = tf.keras.layers.Dropout(config["dropout"])(dense)
+        # if hyperparameters_tuning["dropout"] == True:
+        #     dense = tf.keras.layers.Dropout(config["dropout"])(dense)
+        dense = tf.keras.layers.Dropout(config["dropout"])(dense)
         out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')(dense)
         model = tf.keras.Model(inputs=[input_sentence], outputs=[out])
         model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=hyperparameters_tuning["lr"]), 
-                      loss=['binary_crossentropy'], 
-                      metrics=['accuracy']) 
+                                                        loss=['binary_crossentropy'], 
+                                                        metrics=['accuracy']) 
         return model
 
 class train_mlp(object):
@@ -104,15 +78,21 @@ class train_mlp(object):
         return prob
 
     def build_model(self, hp):
-        units = hp.Int("units", min_value=1, max_value=129, step=8)
-        lr = hp.Float("lr", min_value=1e-5, max_value=3e-2, sampling="log")
+
+        # units = hp.Int("units", min_value=1, max_value=129, step=8)
+        units = self.config["hidden_units"]
+        # lr = hp.Float("lr", min_value=1e-5, max_value=3e-2, sampling="log")
+        lr = self.config["learning_rate"]
         # activation = hp.Choice("activation", ["relu", "tanh"])
-        dropout = hp.Boolean("dropout")
+        # dropout = hp.Boolean("dropout")
+        dropout = hp.Float("dropout", min_value=0.1, max_value=0.9, step=0.1)
+
         hyperparameters_tuning = {
                                  "units":units,
                                  "lr":lr,
                                  "dropout":dropout
                                  }
+        
         model = mlp(self.config, 
                     self.word_vectors, 
                     self.maxlen, 
@@ -139,9 +119,9 @@ class train_mlp(object):
         test_sentiment_labels = np.array(test_datasets["test_dataset"]["sentiment_label"])
         maxlen = max([train_sentences.shape[1], val_sentences.shape[1], test_sentences.shape[1]])
         self.maxlen = maxlen
-        train_sentences = self.pad(train_sentences, maxlen)
-        val_sentences = self.pad(val_sentences, maxlen)
-        test_sentences = self.pad(test_sentences, maxlen)
+        train_sentences = self.pad(train_sentences, self.maxlen)
+        val_sentences = self.pad(val_sentences, self.maxlen)
+        test_sentences = self.pad(test_sentences, self.maxlen)
         train_dataset = (train_sentences, train_sentiment_labels)
         val_dataset = (val_sentences, val_sentiment_labels)
         test_dataset = (test_sentences, test_sentiment_labels)
@@ -170,61 +150,63 @@ class train_mlp(object):
                         AdditionalValidationSets(additional_validation_datasets, self.config)
                        ]
         
-        # #model compilation and summarization
-        # model = mlp(self.config, word_vectors, maxlen)
-        # model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
-        #               loss=['binary_crossentropy'], 
-        #               metrics=['accuracy']) 
-        # model.summary()
-        # self.model = model
+        #model compilation and summarization
+        model = mlp(self.config, word_vectors, maxlen)
+        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+                      loss=['binary_crossentropy'], 
+                      metrics=['accuracy']) 
+        model.summary()
+        self.model = model
 
-        #Hyperparameter tuning
-        self.word_vectors = word_vectors
-        self.build_model(keras_tuner.HyperParameters())
-        tuner = keras_tuner.RandomSearch(
-                                        hypermodel=self.build_model,
-                                        objective="val_loss",
-                                        max_trials=3,
-                                        executions_per_trial=2,
-                                        overwrite=True,
-                                        )
-        tuner.search_space_summary()
+        # #Hyperparameter tuning
+        # self.word_vectors = word_vectors
+        # self.build_model(keras_tuner.HyperParameters())
+        # tuner = keras_tuner.RandomSearch(
+        #                                 hypermodel=self.build_model,
+        #                                 objective="val_loss",
+        #                                 max_trials=3,
+        #                                 executions_per_trial=2,
+        #                                 overwrite=True,
+        #                                 )
+        # tuner.search_space_summary()
 
         # Train the model
         if self.config["train_model"] == True:
-            # self.model.fit(x=train_dataset[0], 
-            #                 y=train_dataset[1], 
-            #                 batch_size=self.config["mini_batch_size"], 
-            #                 epochs=self.config["train_epochs"], 
-            #                 validation_data=val_dataset, 
-            #                 callbacks=my_callbacks)
-            tuner.search(train_dataset[0], 
-                         train_dataset[1],
-                         batch_size=self.config["mini_batch_size"],
-                         epochs=self.config["train_epochs"], 
-                         validation_data=val_dataset)
-            tuner.results_summary()
-            best_hps = tuner.get_best_hyperparameters(5)
-            self.model = self.build_model(best_hps[0])
             self.model.fit(x=train_dataset[0], 
                             y=train_dataset[1], 
                             batch_size=self.config["mini_batch_size"], 
                             epochs=self.config["train_epochs"], 
                             validation_data=val_dataset, 
                             callbacks=my_callbacks)
+            # tuner.search(train_dataset[0], 
+            #              train_dataset[1],
+            #              batch_size=self.config["mini_batch_size"],
+            #              epochs=self.config["train_epochs"], 
+            #              validation_data=val_dataset)
+            # tuner.results_summary()
+            # best_hps = tuner.get_best_hyperparameters(5)
+            # print("\nHyperparameter values")
+            # print(best_hps[0].get("units"))
+            # self.model = self.build_model(best_hps[0])
+            # self.model.fit(x=train_dataset[0], 
+            #                 y=train_dataset[1], 
+            #                 batch_size=self.config["mini_batch_size"], 
+            #                 epochs=self.config["train_epochs"], 
+            #                 validation_data=val_dataset, 
+            #                 callbacks=my_callbacks)
 
             # Save trained model
             if not os.path.exists("assets/trained_models/"):
                 os.makedirs("assets/trained_models/")
             self.model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
-            # Save the configurations
-            self.config["hyperparameters"] = best_hps[0]
+            # # Save the configurations
+            # self.config["hyperparameters"] = best_hps[0]
         
         if self.config["evaluate_model"] == True:
 
             #load model
-            self.model = self.build_model(self.config["hyperparameters"])
+            # self.model = self.build_model(self.config["hyperparameters"])
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
             # Results to be created after evaluation
@@ -260,7 +242,7 @@ class train_mlp(object):
             print("\nLIME explanations")
 
             #Load trained model
-            self.model = self.build_model(self.config["hyperparameters"])
+            # self.model = self.build_model(self.config["hyperparameters"])
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
             #Results to be created after explanation

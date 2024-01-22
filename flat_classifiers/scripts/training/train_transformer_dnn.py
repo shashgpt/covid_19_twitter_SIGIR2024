@@ -6,17 +6,31 @@ import tensorflow as tf
 import os
 import pickle
 import pandas as pd
-from lime import lime_text
 import traceback
+from lime import lime_text
 from tqdm import tqdm
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-class TokenAndPositionEmbedding(layers.Layer):
+class PositionalEmbedding(layers.Layer):
     def __init__(self, maxlen, vocab_size, embed_dim):
         super().__init__()
-        self.token_emb = layers.Embedding(input_dim=vocab_size, output_dim=embed_dim)
+        self.embed_dim = embed_dim
+        self.token_emb = layers.Embedding(input_dim=vocab_size, output_dim=embed_dim, mask_zero=True)
         self.pos_emb = layers.Embedding(input_dim=maxlen, output_dim=embed_dim)
+        # self.pos_emb = self.positional_encoding(length=maxlen, depth=embed_dim)
+
+    # def positional_encoding(self, length, depth):
+    #     depth = depth/2
+    #     positions = np.arange(length)[:, np.newaxis]     # (seq, 1)
+    #     depths = np.arange(depth)[np.newaxis, :]/depth   # (1, depth)
+    #     angle_rates = 1 / (10000**depths)         # (1, depth)
+    #     angle_rads = positions * angle_rates      # (pos, depth)
+    #     pos_encoding = np.concatenate([np.sin(angle_rads), np.cos(angle_rads)], axis=-1) 
+    #     return tf.cast(pos_encoding, dtype=tf.float32)
+    
+    def compute_mask(self, *args, **kwargs):
+        return self.token_emb.compute_mask(*args, **kwargs)
 
     def call(self, x):
         maxlen = tf.shape(x)[-1]
@@ -24,41 +38,52 @@ class TokenAndPositionEmbedding(layers.Layer):
         positions = self.pos_emb(positions)
         x = self.token_emb(x)
         return x + positions
+        # length = tf.shape(x)[1]
+        # x = self.token_emb(x)
+        # x *= tf.math.sqrt(tf.cast(self.embed_dim, tf.float32))
+        # x = x + self.pos_emb[tf.newaxis, :length, :]
+        # return x
 
 class TransformerBlock(Model):
-    def __init__(self, config, embed_dim, maxlen, num_heads, vocab_size, rate=0.1):
+    def __init__(self, config, embed_dim, maxlen, num_heads, vocab_size, epsilon):
         super().__init__()
         self.config = config
-
         # self.input_layer = layers.Input(shape=(maxlen,), dtype="float32")
-        self.embedding_layer = TokenAndPositionEmbedding(maxlen, vocab_size, embed_dim)
+        self.positional_embedding_layer = PositionalEmbedding(maxlen, vocab_size, embed_dim)
         self.att = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
-        ff_dim = num_heads*4
-        self.ffn = tf.keras.Sequential([layers.Dense(ff_dim, activation="relu"), 
-                                        layers.Dense(embed_dim),])
-        self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
-        self.dropout1 = layers.Dropout(rate)
-        self.dropout2 = layers.Dropout(rate)
+        self.ffn = tf.keras.Sequential([layers.Dense(num_heads*4, activation="relu"), 
+                                        layers.Dense(embed_dim)])
+        self.layernorm = layers.LayerNormalization(epsilon=epsilon)
+        self.dropout = layers.Dropout(self.config["dropout"])
         self.global_average_pooling_1d = layers.GlobalAveragePooling1D()
+        self.add = tf.keras.layers.Add()
         self.dense = tf.keras.layers.Dense(20, activation='relu')
         self.out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')
 
     def call(self, inputs, training):
         # inputs = self.input_layer(inputs)
-        word_embeddings = self.embedding_layer(inputs)
-        attn_output = self.att(word_embeddings, word_embeddings)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(word_embeddings + attn_output)
-        ffn_output = self.ffn(out1)
-        ffn_output = self.dropout2(ffn_output, training=training)
-        layernorm2 = self.layernorm2(out1 + ffn_output)
-        pooled_output = self.global_average_pooling_1d(layernorm2)
-        dropout = self.dropout2(pooled_output)
-        dense = self.dense(dropout)
-        x = self.dropout2(dense)
-        out = self.out(x)
-        return out
+
+        #positional embeddings
+        positional_embeddings = self.positional_embedding_layer(inputs)
+        positional_embeddings = self.dropout(positional_embeddings)
+        positional_embeddings = self.layernorm(positional_embeddings)
+
+        #encoder
+        encoder_output = self.att(positional_embeddings, positional_embeddings)
+        encoder_output = self.dropout(encoder_output)
+        encoder_output = self.add([positional_embeddings, encoder_output])
+        encoder_output = self.layernorm(encoder_output)
+        encoder_output_ffn = self.ffn(encoder_output)
+        encoder_output_ffn = self.dropout(encoder_output_ffn)
+        encoder_output = self.add([encoder_output, encoder_output_ffn])
+        encoder_output = self.layernorm(encoder_output)
+
+        #output (taking average of all hidden states)
+        output = self.global_average_pooling_1d(encoder_output)
+        # output = self.dense(output)
+        # output = self.dropout(output)
+        output = self.out(output)
+        return output
 
     def build_model(self, input_shape):
         input_data = layers.Input(shape=(input_shape,), dtype="float32")
@@ -136,13 +161,13 @@ class train_transformer(object):
             additional_validation_datasets.append(dataset)
 
         # Define callbacks
-        early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',  # 1. Calculate val_loss_1 
-                                                        min_delta = 0,                  # 2. Check val_losses for next 10 epochs 
-                                                        patience=10,                    # 3. Stop training if none of the val_losses are lower than val_loss_1
-                                                        verbose=0,                      # 4. Get the trained weights corresponding to val_loss_1
-                                                        mode="min",
-                                                        baseline=None, 
-                                                        restore_best_weights=True)
+        early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',              # 1. Calculate val_loss_1 
+                                                                    min_delta = 0,                  # 2. Check val_losses for next 10 epochs 
+                                                                    patience=10,                    # 3. Stop training if none of the val_losses are lower than val_loss_1
+                                                                    verbose=0,                      # 4. Get the trained weights corresponding to val_loss_1
+                                                                    mode="min",
+                                                                    baseline=None, 
+                                                                    restore_best_weights=True)
         my_callbacks = [
                         # early_stopping_callback, 
                         AdditionalValidationSets(additional_validation_datasets, self.config)
@@ -164,11 +189,12 @@ class train_transformer(object):
         model = TransformerBlock(config=self.config, 
                                 embed_dim=embed_dim, 
                                 maxlen=maxlen, 
-                                num_heads=6, 
-                                vocab_size=vocab_size).build_model(input_shape = train_dataset[0].shape[1])
+                                num_heads=self.config["hidden_units"], 
+                                vocab_size=vocab_size,
+                                epsilon=1e-6).build_model(input_shape = train_dataset[0].shape[1])
         self.model = model
 
-        # Train the model
+        #Train the model
         if self.config["train_model"] == True:
             model.fit(x=train_dataset[0], 
                     y=train_dataset[1], 
@@ -177,17 +203,17 @@ class train_transformer(object):
                     validation_data=val_dataset, 
                     callbacks=my_callbacks)
 
-            # Save trained model
+            #Save trained model
             if not os.path.exists("assets/trained_models/"):
                 os.makedirs("assets/trained_models/")
             model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
         if self.config["evaluate_model"] == True:
 
-            #load model
+            #Load model
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
-            # Results to be created after evaluation
+            #Results to be created after evaluation
             results = {'sentence':[], 
                         'sentiment_label':[],  
                         'rule_label':[],
@@ -195,7 +221,7 @@ class train_transformer(object):
                         'sentiment_probability_output':[], 
                         'sentiment_prediction_output':[]}
 
-            # Evaluation and predictions
+            #Evaluation and predictions
             evaluations = self.model.evaluate(x=test_dataset[0], y=test_dataset[1])
             print("test loss, test acc:", evaluations)
             predictions = self.model.predict(x=test_dataset[0])

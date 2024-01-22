@@ -108,19 +108,6 @@ class Construct_covid19_dataset(object):
 
     def create_dataset(self): # Code to label the tweets with sentiment labels
 
-        # Emoji to emotions score table
-        emoji_score_table = pd.read_csv("datasets/EmoTag1200-scores.csv")
-        emoji_score_table = emoji_score_table.drop(['anger', 'disgust', 'fear', 'sadness'], axis=1)
-        emoji_score_table = emoji_score_table.rename(columns={'-anger':'anger', '-disgust':'disgust', '-fear':'fear', '-sadness':'sadness'})
-        emo_tag1200_emoji_list = list(emoji_score_table['emoji'])
-
-        # Tweets hash table (to check for duplicate tweets)(WRONG since it's only checking tweets for a particular file)
-        tweets_hash_table = set()
-
-        # Select a file from the corpus
-        # for i in range(self.config["start"], self.config["stop"]+1):
-        #     i = str(i)
-
         # Output data
         self.output_data = {
                             'tweet_id':[],
@@ -228,9 +215,18 @@ class Construct_covid19_dataset(object):
                         "counter_negative_a_nonetheless_b_no_contrast":0,
                         }
 
-        # Make directories for output data
-        if not os.path.exists("datasets/corpus/corona_tweets_"+self.config["folder_number"]):
-            os.makedirs("datasets/corpus/corona_tweets_"+self.config["folder_number"])
+        # Emoji to emotions score table
+        emoji_score_table = pd.read_csv("datasets/EmoTag1200-scores.csv")
+        emoji_score_table = emoji_score_table.drop(['anger', 'disgust', 'fear', 'sadness'], axis=1)
+        emoji_score_table = emoji_score_table.rename(columns={'-anger':'anger', '-disgust':'disgust', '-fear':'fear', '-sadness':'sadness'})
+        emo_tag1200_emoji_list = list(emoji_score_table['emoji'])
+
+        # Tweets hash table (to check for duplicate tweets)(WRONG since it's only checking tweets for a particular file)
+        tweets_hash_table = set()
+
+        # Select a file from the corpus
+        # for i in range(self.config["start"], self.config["stop"]+1):
+        #     i = str(i)
         
         # # Create log file
         # log_file_name = "preprocessed_data_log.log"
@@ -239,6 +235,8 @@ class Construct_covid19_dataset(object):
         old_stdout = sys.stdout
         now = datetime.now()
         current_time = now.strftime("%H:%M:%S")
+        folder_name = "assets/logs/"+self.config["asset_name"]+"_corona_tweets_"+self.config["folder_number"]+"/"
+        file_name = "assets/logs/"+self.config["asset_name"]+"_corona_tweets_"+self.config["folder_number"]+"/"+current_time+".txt"
         if not os.path.exists("assets/logs/corona_tweets_"+self.config["folder_number"]+"/"):
             os.makedirs("assets/logs/corona_tweets_"+self.config["folder_number"]+"/")
         log_file = open("assets/logs/corona_tweets_"+self.config["folder_number"]+"/"+self.config["asset_name"]+"_"+current_time+".txt","w")
@@ -758,6 +756,11 @@ class Construct_covid19_dataset(object):
                     except TimeoutException:
                         print("\n"+line)
                         print("\nTimeout in processing this tweet")
+                        print("\nSaving counters to restart again")
+                        if not os.path.exists("assets/processed_dataset"):
+                            os.makedirs("assets/processed_dataset")
+                        with open("assets/processed_dataset/"+self.config["asset_name"]+"_corona_tweets_"+self.config["folder_number"]+"_counters.pickle", 'wb') as handle:
+                            pickle.dump(self.counters, handle, protocol=pickle.HIGHEST_PROTOCOL)
                         pbar.update()
                         continue
                     

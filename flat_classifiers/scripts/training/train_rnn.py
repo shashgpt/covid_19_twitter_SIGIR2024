@@ -208,3 +208,9 @@ class train_rnn(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
+        
+        #save the configuration parameters (hyperparameters)
+        if not os.path.exists("assets/configurations/"):
+            os.makedirs("assets/configurations/")
+        with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
+            pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)

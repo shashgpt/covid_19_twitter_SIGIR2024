@@ -37,8 +37,8 @@
 # --lime_no_of_samples 1000
 
 #When experimenting
-asset="bigru_1e5LearningRate_1000Epochs"
-model="bigru"
+asset="mlp_1e-6LearningRate_200Epochs_0.5Dropout"
+model="mlp"
 timestamp="$(date +"%T")"
 mkdir -p "assets/logs"
 cd "assets/logs"
@@ -62,8 +62,9 @@ python3 main.py \
 --generate_explanation "True" \
 --fine_tune_word_embeddings "False" \
 --optimizer "adam" \
---learning_rate 1e-5 \
+--learning_rate 1e-6 \
 --mini_batch_size 50 \
---train_epochs 1000 \
---dropout 0.3 \
---lime_no_of_samples 1000
+--train_epochs 200 \
+--dropout 0.5 \
+--lime_no_of_samples 1000 \
+--hidden_units 128

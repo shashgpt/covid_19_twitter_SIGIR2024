@@ -15,7 +15,7 @@ from transformers import TFAutoModel, BertConfig, AutoTokenizer
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
 class BERTweet_transformer(Model):
-    def __init__(self, config, num_heads, maxlen, rate=0.1, **kwargs):
+    def __init__(self, config, num_heads, maxlen, epsilon, **kwargs):
         super().__init__()
         self.config = config
         self.bert_configuration = BertConfig().to_dict()
@@ -30,10 +30,10 @@ class BERTweet_transformer(Model):
         self.ffn = tf.keras.Sequential(
             [layers.Dense(ff_dim, activation="relu"), layers.Dense(self.bert_configuration["hidden_size"]),]
         )
-        self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
-        self.dropout1 = layers.Dropout(rate)
-        self.dropout2 = layers.Dropout(rate)
+        self.layernorm1 = layers.LayerNormalization(epsilon=epsilon)
+        self.layernorm2 = layers.LayerNormalization(epsilon=epsilon)
+        self.dropout1 = layers.Dropout(self.config["dropout"])
+        self.dropout2 = layers.Dropout(self.config["dropout"])
         self.pos_emb = layers.Embedding(input_dim=maxlen, output_dim=self.bert_configuration["hidden_size"])
         self.global_average_pooling_1d = layers.GlobalAveragePooling1D()
         self.dense = tf.keras.layers.Dense(20, activation='relu')
@@ -119,7 +119,7 @@ class train_bertweet_transformer(object):
         if not os.path.exists("assets/training_history/"):
             os.makedirs("assets/training_history/")
         
-        #Create train, val, and test datasets
+        #create train, val, and test datasets
         train_sentences = self.vectorize(train_dataset["sentence"])
         train_sentiment_labels = np.array(train_dataset["sentiment_label"])
         val_sentences = self.vectorize(val_datasets["val_dataset"]["sentence"])
@@ -146,13 +146,13 @@ class train_bertweet_transformer(object):
             additional_validation_datasets.append(dataset)
 
         #define callbacks
-        early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',  # 1. Calculate val_loss_1 
-                                                        min_delta = 0,                  # 2. Check val_losses for next 10 epochs 
-                                                        patience=10,                    # 3. Stop training if none of the val_losses are lower than val_loss_1
-                                                        verbose=0,                      # 4. Get the trained weights corresponding to val_loss_1
-                                                        mode="min",
-                                                        baseline=None, 
-                                                        restore_best_weights=True)
+        early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',              # 1. Calculate val_loss_1 
+                                                                    min_delta = 0,                  # 2. Check val_losses for next 10 epochs 
+                                                                    patience=10,                    # 3. Stop training if none of the val_losses are lower than val_loss_1
+                                                                    verbose=0,                      # 4. Get the trained weights corresponding to val_loss_1
+                                                                    mode="min",
+                                                                    baseline=None, 
+                                                                    restore_best_weights=True)
         my_callbacks = [
                         # early_stopping_callback, 
                         AdditionalValidationSets(additional_validation_datasets, self.config)
@@ -161,12 +161,16 @@ class train_bertweet_transformer(object):
         #model compilation and summarization
         model = BERTweet_transformer(self.config,
                                      maxlen=self.maxlen,
-                                    num_heads=6)
+                                     num_heads=self.config["hidden_units"],
+                                     epsilon=1e-6)
+        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+                                                        loss=['binary_crossentropy'], 
+                                                        metrics=['accuracy'])
         model.build(input_shape = train_dataset[0].shape)
         model.summary()
         self.model = model
 
-        #Train the model
+        #train the model
         if self.config["train_model"] == True:
             self.model.fit(x=train_dataset[0], 
                     y=train_dataset[1], 
@@ -179,19 +183,13 @@ class train_bertweet_transformer(object):
             if not os.path.exists("assets/trained_models/"):
                 os.makedirs("assets/trained_models/")
             self.model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
-
-            #Save the configuration parameters for this run (marks the creation of an asset)
-            if not os.path.exists("assets/configurations/"):
-                os.makedirs("assets/configurations/")
-            with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
-                pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)
         
         if self.config["evaluate_model"] == True:
 
-            #Load model
+            #load model
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
-            # Results to be created after evaluation
+            #results to be created after evaluation
             results = {'sentence':[], 
                         'sentiment_label':[],  
                         'rule_label':[],
@@ -199,7 +197,7 @@ class train_bertweet_transformer(object):
                         'sentiment_probability_output':[], 
                         'sentiment_prediction_output':[]}
 
-            #Evaluation and predictions
+            #evaluation and predictions
             evaluations = self.model.evaluate(x=test_dataset[0], y=test_dataset[1])
             print("test loss, test acc:", evaluations)
             predictions = self.model.predict(x=test_dataset[0])
@@ -214,7 +212,7 @@ class train_bertweet_transformer(object):
                 prediction = np.rint(prediction)
                 results['sentiment_prediction_output'].append(prediction[0])
 
-            #Save the results
+            #save the results
             if not os.path.exists("assets/results/"):
                 os.makedirs("assets/results/")
             with open("assets/results/"+self.config["asset_name"]+".pickle", 'wb') as handle:
@@ -223,10 +221,10 @@ class train_bertweet_transformer(object):
         if self.config["generate_explanation"] == True:
             print("\nLIME explanations")
 
-            #Load trained model
+            #load trained model
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
-            #Results to be created after explanation
+            #results to be created after explanation
             explanations = {"sentence":[], 
                             "LIME_explanation":[], 
                             "LIME_explanation_normalised":[]}
@@ -287,4 +285,10 @@ class train_bertweet_transformer(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
+        
+        #save the configuration parameters for this run (marks the creation of an asset)
+        if not os.path.exists("assets/configurations/"):
+            os.makedirs("assets/configurations/")
+        with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
+            pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)
         

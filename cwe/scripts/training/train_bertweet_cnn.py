@@ -1,22 +1,22 @@
-from tensorflow.keras.models import Model
-from tensorflow.keras import layers
-from tensorflow.keras.layers import Embedding, Dropout, Dense, Input, Softmax, Lambda
-from tensorflow.keras.initializers import RandomUniform
-from tensorflow.keras.initializers import Constant
 import tensorflow as tf
 import numpy as np
 import pandas as pd
 import os
 import pickle
-from lime import lime_text
 import traceback
+from lime import lime_text
 from tqdm import tqdm
 from transformers import TFAutoModel
 from transformers import AutoTokenizer
+from tensorflow.keras.models import Model
+from tensorflow.keras import layers
+from tensorflow.keras.layers import Embedding, Dropout, Dense, Input, Softmax, Lambda
+from tensorflow.keras.initializers import RandomUniform
+from tensorflow.keras.initializers import Constant
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-class BERTweet_mlp(tf.keras.Model):
+class BERTweet_cnn(tf.keras.Model):
     def __init__(self, config, **kwargs):
         super().__init__()
         self.config = config
@@ -24,8 +24,34 @@ class BERTweet_mlp(tf.keras.Model):
         for layer in self.bert_encoder.layers:
             layer.trainable = config["fine_tune_word_embeddings"]
 
-        self.reshape = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(128, activation='relu')
+        self.conv_1 = layers.Conv2D(filters = self.config["hidden_units"], 
+                                    kernel_size = (3, 300),
+                                    strides = 1,
+                                    dilation_rate = 1,
+                                    padding = "valid",
+                                    data_format = "channels_first",
+                                    name = "conv2D_1")
+        self.conv_2 = layers.Conv2D(filters = self.config["hidden_units"], 
+                                    kernel_size = (4, 300),
+                                    strides = 1,
+                                    dilation_rate = 1,
+                                    padding = "valid",
+                                    data_format = "channels_first",
+                                    name = "conv2D_2")
+        self.conv_3 = layers.Conv2D(filters = self.config["hidden_units"], 
+                                    kernel_size = (5, 300),
+                                    strides = 1,
+                                    dilation_rate = 1,
+                                    padding = "valid",
+                                    data_format = "channels_first",
+                                    name = "conv2D_3")
+        self.relu = layers.ReLU()
+        self.max_pool = layers.GlobalMaxPooling1D(data_format="channels_first",
+                                                  name="maxpool1D")
+        self.concat = layers.Concatenate(axis=1, name="concatenate")
+        self.dropout = layers.Dropout(rate=config["dropout"], 
+                                      seed=config["seed_value"], 
+                                      name="dropout")
         self.out = tf.keras.layers.Dense(1, activation="sigmoid")
     
     def compute_attention_masks(self, input_ids):
@@ -44,14 +70,31 @@ class BERTweet_mlp(tf.keras.Model):
 
         #bert_tweet output
         word_embeddings = self.bert_encoder(input_ids, attention_masks).last_hidden_state
+        word_embeddings_reshaped = tf.keras.backend.expand_dims(word_embeddings, axis=1) # batch_size x 1 x sent_len x embedding_dim
+        
+        output_1 = self.conv_1(word_embeddings_reshaped)
+        output_1 = tf.keras.backend.squeeze(output_1, axis=3)
+        output_1 = self.relu(output_1)
+        output_1 = self.max_pool(output_1)
 
-        word_embeddings_flatten = self.reshape(word_embeddings)
-        dense = self.dense(word_embeddings_flatten)
-        out = self.out(dense)
+        output_2 = self.conv_2(word_embeddings_reshaped)
+        output_2 = tf.keras.backend.squeeze(output_2, axis=3)
+        output_2 = self.relu(output_2)
+        output_2 = self.max_pool(output_2)
+
+        output_3 = self.conv_3(word_embeddings_reshaped)
+        output_3 = tf.keras.backend.squeeze(output_3, axis=3)
+        output_3 = self.relu(output_3)
+        output_3 = self.max_pool(output_3)
+
+        output = self.concat([output_1, output_2, output_3])
+        output = self.dropout(output)
+
+        out = self.out(output)
         return out
 
 
-class train_cnn(object):
+class train_bertweet_cnn(object):
     def __init__(self, config):
         self.config = config
     
@@ -128,14 +171,17 @@ class train_cnn(object):
                                                         mode="min",
                                                         baseline=None, 
                                                         restore_best_weights=True)
-        my_callbacks = [early_stopping_callback, 
-                        AdditionalValidationSets(additional_validation_datasets, self.config)]
+        my_callbacks = [
+                        early_stopping_callback, 
+                        AdditionalValidationSets(additional_validation_datasets, self.config)
+                       ]
 
         #model compilation and summarization
-        model = cnn(self.config, word_vectors)
+        model = BERTweet_cnn(self.config)
         model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
-                                                        loss=['binary_crossentropy'], 
-                                                        metrics=['accuracy'])    
+                      loss=['binary_crossentropy'], 
+                      metrics=['accuracy'])
+        model.build(input_shape = train_dataset[0].shape) 
         model.summary()
         self.model = model
 
@@ -249,3 +295,9 @@ class train_cnn(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
+
+        #save the configuration parameters for this run (marks the creation of an asset)
+        if not os.path.exists("assets/configurations/"):
+            os.makedirs("assets/configurations/")
+        with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
+            pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)

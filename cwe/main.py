@@ -102,6 +102,9 @@ if __name__=='__main__':
     parser.add_argument("--generate_explanation",
                         type=lambda x:bool(distutils.util.strtobool(x)),
                         required=True)
+    parser.add_argument("--hidden_units",
+                        type=int,
+                        required=True)
     args = parser.parse_args()
     config = vars(args)
     print("\n")

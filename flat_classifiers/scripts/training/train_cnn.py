@@ -80,24 +80,32 @@ class train_cnn(object):
     def __init__(self, config):
         self.config = config
     
+    # def vectorize(self, sentences):
+    #     """
+    #     tokenize each preprocessed sentence in dataset using bert tokenizer
+    #     """
+    #     tokenizer = AutoTokenizer.from_pretrained("vinai/bertweet-covid19-base-cased", use_fast=False)
+    #     max_len = 0
+    #     input_ids = []
+    #     for sentence in sentences:
+    #         tokenized_context = tokenizer.encode(sentence)
+    #         input_id = tokenized_context
+    #         input_ids.append(input_id)
+    #         if len(input_id) > max_len:
+    #             max_len = len(input_id)
+    #     for index, input_id in enumerate(input_ids):
+    #         padding_length = max_len - len(input_ids[index])
+    #         input_ids[index] = input_ids[index] + ([0] * padding_length)
+    #     return np.array(input_ids)
+    
     def vectorize(self, sentences):
         """
-        tokenize each preprocessed sentence in dataset using bert tokenizer
+        tokenize each preprocessed sentence in dataset as sentence.split()
+        encode each tokenized sentence as per vocabulary
+        right pad each encoded tokenized sentence with 0 upto max_tokenized_sentence_len the dataset 
         """
-        tokenizer = AutoTokenizer.from_pretrained("vinai/bertweet-covid19-base-cased", use_fast=False)
-        max_len = 0
-        input_ids = []
-        for sentence in sentences:
-            tokenized_context = tokenizer.encode(sentence)
-            input_id = tokenized_context
-            input_ids.append(input_id)
-            if len(input_id) > max_len:
-                max_len = len(input_id)
-        for index, input_id in enumerate(input_ids):
-            padding_length = max_len - len(input_ids[index])
-            input_ids[index] = input_ids[index] + ([0] * padding_length)
-        return np.array(input_ids)
-    
+        return self.vectorize_layer(np.array(sentences)).numpy()
+
     def pad(self, sentences, maxlen):
         """
         right pad sequence with 0 till max token length sentence
@@ -114,9 +122,13 @@ class train_cnn(object):
 
     def train_model(self, train_dataset, val_datasets, test_datasets, word_index, word_vectors):
 
-        # Make paths
+        #make paths
         if not os.path.exists("assets/training_history/"):
             os.makedirs("assets/training_history/")
+        
+        #create vocab and define the vectorize layer
+        vocab = [key for key in word_index.keys()]
+        self.vectorize_layer = tf.keras.layers.experimental.preprocessing.TextVectorization(standardize=None, split='whitespace', vocabulary=vocab)
 
         #Create train, val, and test datasets
         train_sentences = self.vectorize(train_dataset["sentence"])
@@ -134,7 +146,7 @@ class train_cnn(object):
         val_dataset = (val_sentences, val_sentiment_labels)
         test_dataset = (test_sentences, test_sentiment_labels)
 
-        # Create additional validation datasets
+        #Create additional validation datasets
         additional_validation_datasets = []
         for key, value in test_datasets.items():
             # if key in ["test_dataset_one_rule"]:
@@ -145,16 +157,18 @@ class train_cnn(object):
             dataset = (sentences, sentiment_labels, key)
             additional_validation_datasets.append(dataset)
 
-        # Define callbacks
-        early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',  # 1. Calculate val_loss_1 
-                                                        min_delta = 0,                  # 2. Check val_losses for next 10 epochs 
-                                                        patience=10,                    # 3. Stop training if none of the val_losses are lower than val_loss_1
-                                                        verbose=0,                      # 4. Get the trained weights corresponding to val_loss_1
-                                                        mode="min",
-                                                        baseline=None, 
-                                                        restore_best_weights=True)
-        my_callbacks = [early_stopping_callback, 
-                        AdditionalValidationSets(additional_validation_datasets, self.config)]
+        #Define callbacks
+        early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',              # 1. Calculate val_loss_1 
+                                                                    min_delta = 0,                  # 2. Check val_losses for next 10 epochs 
+                                                                    patience=10,                    # 3. Stop training if none of the val_losses are lower than val_loss_1
+                                                                    verbose=0,                      # 4. Get the trained weights corresponding to val_loss_1
+                                                                    mode="min",
+                                                                    baseline=None, 
+                                                                    restore_best_weights=True)
+        my_callbacks = [
+                        #early_stopping_callback, 
+                        AdditionalValidationSets(additional_validation_datasets, self.config)
+                       ]
 
         #model compilation and summarization
         model = cnn(self.config, word_vectors)
@@ -274,3 +288,9 @@ class train_cnn(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
+        
+        #save the configuration parameters (hyperparameters)
+        if not os.path.exists("assets/configurations/"):
+            os.makedirs("assets/configurations/")
+        with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
+            pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)

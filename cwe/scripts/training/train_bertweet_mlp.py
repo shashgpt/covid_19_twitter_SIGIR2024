@@ -149,12 +149,6 @@ class train_bertweet_mlp(object):
             if not os.path.exists("assets/trained_models/"):
                 os.makedirs("assets/trained_models/")
             self.model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
-
-            #save the configuration parameters for this run (marks the creation of an asset)
-            if not os.path.exists("assets/configurations/"):
-                os.makedirs("assets/configurations/")
-            with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
-                pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)
         
         if self.config["evaluate_model"] == True:
 
@@ -257,3 +251,9 @@ class train_bertweet_mlp(object):
                 os.makedirs("assets/lime_explanations/")
             with open("assets/lime_explanations/"+self.config["asset_name"]+".pickle", "wb") as handle:
                 pickle.dump(explanations, handle)
+        
+        #save the configuration parameters for this run (marks the creation of an asset)
+        if not os.path.exists("assets/configurations/"):
+            os.makedirs("assets/configurations/")
+        with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
+            pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)

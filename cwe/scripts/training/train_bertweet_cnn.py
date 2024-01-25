@@ -93,6 +93,13 @@ class BERTweet_cnn(tf.keras.Model):
         out = self.out(output)
         return out
 
+    def build_model(self, input_shape):
+        input_data = tf.keras.layers.Input(shape=(input_shape,), dtype="float32")
+        model = tf.keras.Model(inputs=input_data, outputs=self.call(input_data, training=False))
+        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+                                                        loss=['binary_crossentropy'], 
+                                                        metrics=['accuracy'])
+        model.summary()
 
 class train_bertweet_cnn(object):
     def __init__(self, config):
@@ -130,7 +137,7 @@ class train_bertweet_cnn(object):
         prob = np.concatenate((pred_prob_0, pred_prob_1), axis=1)
         return prob
 
-    def train_model(self, train_dataset, val_datasets, test_datasets, word_index, word_vectors):
+    def train_model(self, train_dataset, val_datasets, test_datasets):
 
         # Make paths
         if not os.path.exists("assets/training_history/"):
@@ -155,8 +162,6 @@ class train_bertweet_cnn(object):
         # Create additional validation datasets
         additional_validation_datasets = []
         for key, value in test_datasets.items():
-            # if key in ["test_dataset_one_rule"]:
-            #     continue
             sentences = self.vectorize(test_datasets[key]["sentence"])
             sentences = self.pad(sentences, maxlen)
             sentiment_labels = np.array(test_datasets[key]["sentiment_label"])
@@ -177,12 +182,15 @@ class train_bertweet_cnn(object):
                        ]
 
         #model compilation and summarization
+        # model = BERTweet_cnn(self.config).build_model(input_shape = maxlen)
+        # self.model = model
         model = BERTweet_cnn(self.config)
         model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
                       loss=['binary_crossentropy'], 
                       metrics=['accuracy'])
-        model.build(input_shape = train_dataset[0].shape) 
-        model.summary()
+        # print(train_dataset[0].shape)
+        # model.build(input_shape = train_dataset[0].shape)
+        # model.summary()
         self.model = model
 
         # Train the model
@@ -204,24 +212,18 @@ class train_bertweet_cnn(object):
             #load model
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
-            # Results to be created after evaluation
-            results = {'sentence':[], 
-                        'sentiment_label':[],  
-                        'rule_label':[],
-                        'contrast':[],
-                        'sentiment_probability_output':[], 
-                        'sentiment_prediction_output':[]}
+            #Results to be created after evaluation
+            results = test_datasets["test_dataset"].copy()
 
-            # Evaluation and predictions
+            #Evaluation and predictions
             evaluations = self.model.evaluate(x=test_dataset[0], y=test_dataset[1])
             print("test loss, test acc:", evaluations)
-            predictions = self.model.predict(x=test_dataset[0])
+            predictions = self.model.predict(x=test_dataset[0][0])
+            print(len(predictions))
 
-            for index, sentence in enumerate(test_datasets["test_dataset"]["sentence"]):
-                results['sentence'].append(test_datasets["test_dataset"]['sentence'][index])
-                results['sentiment_label'].append(test_datasets["test_dataset"]['sentiment_label'][index])
-                results['rule_label'].append(test_datasets["test_dataset"]['rule_label'][index])
-                results['contrast'].append(test_datasets["test_dataset"]['contrast'][index])
+            #Create results
+            results['sentiment_probability_output'] = []
+            results['sentiment_prediction_output'] = []
             for prediction in predictions:
                 results['sentiment_probability_output'].append(prediction)
                 prediction = np.rint(prediction)

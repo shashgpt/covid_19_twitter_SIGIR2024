@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers
+from tensorflow.keras.layers import Layer
 from tensorflow.keras.models import Model
 import numpy as np
 import tensorflow as tf
@@ -12,7 +13,7 @@ from tqdm import tqdm
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-class PositionalEmbedding(layers.Layer):
+class PositionalEmbedding(Layer):
     def __init__(self, maxlen, vocab_size, embed_dim):
         super().__init__()
         self.embed_dim = embed_dim
@@ -61,20 +62,19 @@ class TransformerBlock(Model):
         self.out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')
 
     def call(self, inputs, training):
-        # inputs = self.input_layer(inputs)
 
         #positional embeddings
         positional_embeddings = self.positional_embedding_layer(inputs)
-        positional_embeddings = self.dropout(positional_embeddings)
+        positional_embeddings = self.dropout(positional_embeddings, training=training)
         positional_embeddings = self.layernorm(positional_embeddings)
 
         #encoder
         encoder_output = self.att(positional_embeddings, positional_embeddings)
-        encoder_output = self.dropout(encoder_output)
+        encoder_output = self.dropout(encoder_output, training=training)
         encoder_output = self.add([positional_embeddings, encoder_output])
         encoder_output = self.layernorm(encoder_output)
         encoder_output_ffn = self.ffn(encoder_output)
-        encoder_output_ffn = self.dropout(encoder_output_ffn)
+        encoder_output_ffn = self.dropout(encoder_output_ffn, training=training)
         encoder_output = self.add([encoder_output, encoder_output_ffn])
         encoder_output = self.layernorm(encoder_output)
 
@@ -152,8 +152,6 @@ class train_transformer(object):
         # Create additional validation datasets
         additional_validation_datasets = []
         for key, value in test_datasets.items():
-            # if key in ["test_dataset_one_rule"]:
-            #     continue
             sentences = self.vectorize(test_datasets[key]["sentence"])
             sentences = self.pad(sentences, maxlen)
             sentiment_labels = np.array(test_datasets[key]["sentiment_label"])
@@ -176,22 +174,26 @@ class train_transformer(object):
         #model compilation and summarization
         vocab_size = len(vocab)
         embed_dim = word_vectors.shape[1]
-        # model = TransformerBlock(config=self.config, 
-        #                         embed_dim=embed_dim, 
-        #                         maxlen=maxlen, 
-        #                         num_heads=6, 
-        #                         vocab_size=vocab_size)
-        # model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
-        #                                                 loss=['binary_crossentropy'], 
-        #                                                 metrics=['accuracy'])
-        # model.build(input_shape = train_dataset[0].shape)
-        # model.summary()
         model = TransformerBlock(config=self.config, 
                                 embed_dim=embed_dim, 
                                 maxlen=maxlen, 
                                 num_heads=self.config["hidden_units"], 
                                 vocab_size=vocab_size,
-                                epsilon=1e-6).build_model(input_shape = train_dataset[0].shape[1])
+                                epsilon=1e-6).build_model(input_shape = maxlen)
+        # input_data = layers.Input(shape=(maxlen,), dtype="float32")
+        # transformer_block = TransformerBlock(config=self.config, 
+        #                                     embed_dim=embed_dim, 
+        #                                     maxlen=maxlen, 
+        #                                     num_heads=self.config["hidden_units"], 
+        #                                     vocab_size=vocab_size,
+        #                                     epsilon=1e-6)
+        # output = transformer_block(input_data)
+        # model = tf.keras.Model(inputs=input_data, outputs=output)
+        # model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+        #                                                 loss=['binary_crossentropy'], 
+        #                                                 metrics=['accuracy'])
+        # model.summary()
+
         self.model = model
 
         #Train the model
@@ -214,23 +216,17 @@ class train_transformer(object):
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
             #Results to be created after evaluation
-            results = {'sentence':[], 
-                        'sentiment_label':[],  
-                        'rule_label':[],
-                        'contrast':[],
-                        'sentiment_probability_output':[], 
-                        'sentiment_prediction_output':[]}
+            results = test_datasets["test_dataset"].copy()
 
             #Evaluation and predictions
             evaluations = self.model.evaluate(x=test_dataset[0], y=test_dataset[1])
             print("test loss, test acc:", evaluations)
-            predictions = self.model.predict(x=test_dataset[0])
+            predictions = self.model.predict(x=test_dataset[0][0])
+            print(len(predictions))
 
-            for index, sentence in enumerate(test_datasets["test_dataset"]["sentence"]):
-                results['sentence'].append(test_datasets["test_dataset"]['sentence'][index])
-                results['sentiment_label'].append(test_datasets["test_dataset"]['sentiment_label'][index])
-                results['rule_label'].append(test_datasets["test_dataset"]['rule_label'][index])
-                results['contrast'].append(test_datasets["test_dataset"]['contrast'][index])
+            #Create results
+            results['sentiment_probability_output'] = []
+            results['sentiment_prediction_output'] = []
             for prediction in predictions:
                 results['sentiment_probability_output'].append(prediction)
                 prediction = np.rint(prediction)
@@ -263,6 +259,16 @@ class train_transformer(object):
             explainer = lime_text.LimeTextExplainer(class_names=["negative_sentiment", "positive_sentiment"], 
                                                     split_expression=" ", 
                                                     random_state=self.config["seed_value"])
+
+            # print(len(test_sentences))
+            # predictions_for_lime = self.prediction(test_sentences)
+            # print(predictions_for_lime)
+            # test_datapoint = test_sentences[0]
+            # print(test_datapoint)
+            # tokenized_sentence = test_datapoint.split()
+            # print(tokenized_sentence)
+            # exp = explainer.explain_instance(test_datapoint, self.prediction, num_features = len(tokenized_sentence), num_samples=self.config["lime_no_of_samples"])
+            # print(exp.as_list())
 
             for index, test_datapoint in enumerate(tqdm(test_sentences)):
                 probability = [1 - probabilities[index].tolist()[0], probabilities[index].tolist()[0]]

@@ -62,8 +62,6 @@ class train_rnn(object):
         # Additional datasets for calculating metrics per epoch
         additional_validation_datasets = []
         for key, value in test_datasets.items():
-            # if key in ["test_dataset_one_rule"]:
-            #     continue
             sentences = self.vectorize(test_datasets[key]["sentence"])
             sentiment_labels = np.array(test_datasets[key]["sentiment_label"])
             dataset = (sentences, sentiment_labels, key)

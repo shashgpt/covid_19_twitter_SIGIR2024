@@ -10,7 +10,7 @@ import traceback
 from tqdm import tqdm
 from tensorflow.keras import layers
 from tensorflow.keras.models import Model
-from transformers import TFAutoModel, BertConfig, AutoTokenizer
+from transformers import GPT2Tokenizer, TFGPT2Model, GPT2Config
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
@@ -30,23 +30,22 @@ class PositionalEmbedding(layers.Layer):
         positions = self.pos_emb(positions)
         return word_embeddings + positions
 
-class BERTweet_transformer(Model):
+class gpt2_transformer(Model):
     def __init__(self, config, num_heads, maxlen, epsilon, **kwargs):
         super().__init__()
         self.config = config
-        self.bert_configuration = BertConfig().to_dict()
-        self.bert_encoder = TFAutoModel.from_pretrained("vinai/bertweet-covid19-base-cased",
-                                                        config=self.bert_configuration)
-        for layer in self.bert_encoder.layers:
+        self.configuration = GPT2Config().to_dict()
+        self.encoder = TFGPT2Model.from_pretrained('gpt2')
+        for layer in self.encoder.layers:
             layer.trainable = config["fine_tune_word_embeddings"]
 
         self.positional_embedding_layer = PositionalEmbedding(maxlen=maxlen, 
-                                                              vocab_size=self.bert_configuration["vocab_size"], 
-                                                              embed_dim=self.bert_configuration["hidden_size"])
+                                                              vocab_size=self.configuration["vocab_size"], 
+                                                              embed_dim=self.configuration["hidden_size"])
         self.att = layers.MultiHeadAttention(num_heads=num_heads, 
-                                             key_dim=self.bert_configuration["hidden_size"])
+                                             key_dim=self.configuration["hidden_size"])
         self.ffn = tf.keras.Sequential([layers.Dense(num_heads*4, activation="relu"), 
-                                        layers.Dense(self.bert_configuration["hidden_size"])])
+                                        layers.Dense(self.configuration["hidden_size"])])
         self.layernorm = layers.LayerNormalization(epsilon=epsilon)
         self.dropout = layers.Dropout(self.config["dropout"])
         self.global_average_pooling_1d = layers.GlobalAveragePooling1D()
@@ -54,22 +53,10 @@ class BERTweet_transformer(Model):
         self.dense = tf.keras.layers.Dense(20, activation='relu')
         self.out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')
     
-    def compute_attention_masks(self, input_ids):
-        zero = tf.constant(0, dtype=tf.int64)
-        attention_masks = tf.cast(tf.not_equal(input_ids, zero), dtype=tf.int64)
-        return attention_masks
-    
-    def call(self, input_ids, training, attention_masks=None, **kwargs):
-        
-        #input
-        input_ids = tf.cast(input_ids, dtype=tf.int64)
-
-        #create attention masks
-        if attention_masks == None:
-            attention_masks = self.compute_attention_masks(input_ids)
+    def call(self, input_ids, training, **kwargs):
 
         #bert_tweet output
-        word_embeddings = self.bert_encoder(input_ids, attention_masks).last_hidden_state
+        word_embeddings = self.encoder(input_ids).last_hidden_state
        
         #positional embeddings
         positional_embeddings = self.positional_embedding_layer(input_ids, word_embeddings)
@@ -102,7 +89,7 @@ class BERTweet_transformer(Model):
         model.summary()
         return model
 
-class train_bertweet_transformer(object):
+class train_gpt2_transformer(object):
     def __init__(self, config):
         self.config = config
 
@@ -110,7 +97,7 @@ class train_bertweet_transformer(object):
         """
         tokenize each preprocessed sentence in dataset using bert tokenizer
         """
-        tokenizer = AutoTokenizer.from_pretrained("vinai/bertweet-covid19-base-cased", use_fast=False)
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
         max_len = 0
         input_ids = []
         for sentence in sentences:
@@ -163,8 +150,6 @@ class train_bertweet_transformer(object):
         #create additional validation datasets
         additional_validation_datasets = []
         for key, value in test_datasets.items():
-            # if key in ["test_dataset_one_rule"]:
-            #     continue
             sentences = self.vectorize(test_datasets[key]["sentence"])
             sentiment_labels = np.array(test_datasets[key]["sentiment_label"])
             dataset = (sentences, sentiment_labels, key)
@@ -184,7 +169,7 @@ class train_bertweet_transformer(object):
                         ]
         
         #model compilation and summarization
-        model = BERTweet_transformer(self.config,
+        model = gpt2_transformer(self.config,
                                      maxlen=self.maxlen,
                                      num_heads=self.config["hidden_units"],
                                      epsilon=1e-6).build_model(input_shape = train_dataset[0].shape[1])

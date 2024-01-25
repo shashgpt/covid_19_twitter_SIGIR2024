@@ -20,6 +20,7 @@ class BERTweet_mlp(tf.keras.Model):
             layer.trainable = config["fine_tune_word_embeddings"]
 
         self.reshape = tf.keras.layers.Flatten()
+        self.dropout = tf.keras.layers.Dropout(self.config["dropout"])
         self.dense = tf.keras.layers.Dense(128, activation='relu')
         self.out = tf.keras.layers.Dense(1, activation="sigmoid")
     
@@ -28,7 +29,7 @@ class BERTweet_mlp(tf.keras.Model):
         attention_masks = tf.cast(tf.not_equal(input_ids, zero), dtype=tf.int64)
         return attention_masks
     
-    def call(self, input_ids, attention_masks=None, **kwargs):
+    def call(self, input_ids, training, attention_masks=None, **kwargs):
         
         #input
         input_ids = tf.cast(input_ids, dtype=tf.int64)
@@ -42,8 +43,18 @@ class BERTweet_mlp(tf.keras.Model):
 
         word_embeddings_flatten = self.reshape(word_embeddings)
         dense = self.dense(word_embeddings_flatten)
+        dense = self.dropout(dense, training=training)
         out = self.out(dense)
         return out
+
+    def build_model(self, input_shape):
+        input_data = tf.keras.layers.Input(shape=(input_shape,), dtype="int64")
+        model = tf.keras.Model(inputs=input_data, outputs=self.call(input_data, training=False))
+        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+                                                        loss=['binary_crossentropy'], 
+                                                        metrics=['accuracy'])
+        model.summary()
+        return model
 
 class train_bertweet_mlp(object):
     def __init__(self, config) -> None:
@@ -128,12 +139,7 @@ class train_bertweet_mlp(object):
                        ]
 
         #model compilation and summarization
-        model = BERTweet_mlp(self.config)
-        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
-                      loss=['binary_crossentropy'], 
-                      metrics=['accuracy'])
-        model.build(input_shape = train_dataset[0].shape) 
-        model.summary()
+        model = BERTweet_mlp(self.config).build_model(input_shape = train_dataset[0].shape[1])
         self.model = model
 
         # Train the model
@@ -152,38 +158,32 @@ class train_bertweet_mlp(object):
         
         if self.config["evaluate_model"] == True:
 
-            #load model
+            #Load model
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
-            # Results to be created after evaluation
-            results = {'sentence':[], 
-                        'sentiment_label':[],  
-                        'rule_label':[],
-                        'contrast':[],
-                        'sentiment_probability_output':[], 
-                        'sentiment_prediction_output':[]}
+            #Results to be created after evaluation
+            results = test_datasets["test_dataset"].copy()
 
-            # Evaluation and predictions
+            #Evaluation and predictions
             evaluations = self.model.evaluate(x=test_dataset[0], y=test_dataset[1])
             print("test loss, test acc:", evaluations)
-            predictions = self.model.predict(x=test_dataset[0])
+            predictions = self.model.predict(x=test_dataset[0][0])
+            print(len(predictions))
 
-            for index, sentence in enumerate(test_datasets["test_dataset"]["sentence"]):
-                results['sentence'].append(test_datasets["test_dataset"]['sentence'][index])
-                results['sentiment_label'].append(test_datasets["test_dataset"]['sentiment_label'][index])
-                results['rule_label'].append(test_datasets["test_dataset"]['rule_label'][index])
-                results['contrast'].append(test_datasets["test_dataset"]['contrast'][index])
+            #Create results
+            results['sentiment_probability_output'] = []
+            results['sentiment_prediction_output'] = []
             for prediction in predictions:
                 results['sentiment_probability_output'].append(prediction)
                 prediction = np.rint(prediction)
                 results['sentiment_prediction_output'].append(prediction[0])
 
-            # Save the results
+            #Save the results
             if not os.path.exists("assets/results/"):
                 os.makedirs("assets/results/")
             with open("assets/results/"+self.config["asset_name"]+".pickle", 'wb') as handle:
                 pickle.dump(results, handle)
-        
+
         if self.config["generate_explanation"] == True:
             print("\nLIME explanations")
 

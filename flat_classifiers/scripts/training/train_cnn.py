@@ -28,7 +28,7 @@ def cnn(config, word_vectors): # Similar to one used in pytorch code for CIKM su
 
     word_embeddings_reshaped = tf.keras.backend.expand_dims(word_embeddings, axis=1) # batch_size x 1 x sent_len x embedding_dim
 
-    conv_1 = layers.Conv2D(filters = 100, 
+    conv_1 = layers.Conv2D(filters = config["hidden_units"], 
                             kernel_size = (3, 300),
                             strides = 1,
                             dilation_rate = 1,
@@ -40,7 +40,7 @@ def cnn(config, word_vectors): # Similar to one used in pytorch code for CIKM su
     max_pool_1 = layers.GlobalMaxPooling1D(data_format="channels_first",
                                             name="maxpool1D_1")(conv1_reshaped_relu) # batch size x n_filters
 
-    conv_2 = layers.Conv2D(filters = 100, 
+    conv_2 = layers.Conv2D(filters = config["hidden_units"], 
                             kernel_size = (4, 300),
                             strides = 1,
                             dilation_rate = 1,
@@ -52,7 +52,7 @@ def cnn(config, word_vectors): # Similar to one used in pytorch code for CIKM su
     max_pool_2 = layers.GlobalMaxPooling1D(data_format="channels_first",
                                             name="maxpool1D_2")(conv2_reshaped_relu) # batch size x n_filters
 
-    conv_3 = layers.Conv2D(filters = 100, 
+    conv_3 = layers.Conv2D(filters = config["hidden_units"], 
                             kernel_size = (5, 300),
                             strides = 1,
                             dilation_rate = 1,
@@ -79,24 +79,6 @@ def cnn(config, word_vectors): # Similar to one used in pytorch code for CIKM su
 class train_cnn(object):
     def __init__(self, config):
         self.config = config
-    
-    # def vectorize(self, sentences):
-    #     """
-    #     tokenize each preprocessed sentence in dataset using bert tokenizer
-    #     """
-    #     tokenizer = AutoTokenizer.from_pretrained("vinai/bertweet-covid19-base-cased", use_fast=False)
-    #     max_len = 0
-    #     input_ids = []
-    #     for sentence in sentences:
-    #         tokenized_context = tokenizer.encode(sentence)
-    #         input_id = tokenized_context
-    #         input_ids.append(input_id)
-    #         if len(input_id) > max_len:
-    #             max_len = len(input_id)
-    #     for index, input_id in enumerate(input_ids):
-    #         padding_length = max_len - len(input_ids[index])
-    #         input_ids[index] = input_ids[index] + ([0] * padding_length)
-    #     return np.array(input_ids)
     
     def vectorize(self, sentences):
         """
@@ -149,8 +131,6 @@ class train_cnn(object):
         #Create additional validation datasets
         additional_validation_datasets = []
         for key, value in test_datasets.items():
-            # if key in ["test_dataset_one_rule"]:
-            #     continue
             sentences = self.vectorize(test_datasets[key]["sentence"])
             sentences = self.pad(sentences, maxlen)
             sentiment_labels = np.array(test_datasets[key]["sentiment_label"])

@@ -1,100 +1,42 @@
-import os
-import shutil
-import pickle
-import numpy as np
 import tensorflow as tf
-from tensorflow import keras
+import os
+import numpy as np
 import pandas as pd
+import pickle
 from lime import lime_text
 import traceback
 from tqdm import tqdm
-from tensorflow.keras import layers
-from tensorflow.keras.models import Model
-from transformers import TFAutoModel, BertConfig, AutoTokenizer
+from transformers import GPT2Tokenizer, TFGPT2Model, GPT2Config
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-class PositionalEmbedding(layers.Layer):
-    def __init__(self, maxlen, vocab_size, embed_dim):
-        super().__init__()
-        self.embed_dim = embed_dim
-        self.token_emb = layers.Embedding(input_dim=vocab_size, output_dim=embed_dim, mask_zero=True)
-        self.pos_emb = layers.Embedding(input_dim=maxlen, output_dim=embed_dim)
-    
-    def compute_mask(self, *args, **kwargs):
-        return self.token_emb.compute_mask(*args, **kwargs)
-
-    def call(self, input_ids, word_embeddings):
-        maxlen = tf.shape(input_ids)[-1]
-        positions = tf.range(start=0, limit=maxlen, delta=1)
-        positions = self.pos_emb(positions)
-        return word_embeddings + positions
-
-class BERTweet_transformer(Model):
-    def __init__(self, config, num_heads, maxlen, epsilon, **kwargs):
+class gpt2_mlp(tf.keras.Model):
+    def __init__(self, config, **kwargs):
         super().__init__()
         self.config = config
-        self.bert_configuration = BertConfig().to_dict()
-        self.bert_encoder = TFAutoModel.from_pretrained("vinai/bertweet-covid19-base-cased",
-                                                        config=self.bert_configuration)
-        for layer in self.bert_encoder.layers:
+        self.configuration = GPT2Config().to_dict()
+        self.encoder = TFGPT2Model.from_pretrained('gpt2')
+        for layer in self.encoder.layers:
             layer.trainable = config["fine_tune_word_embeddings"]
 
-        self.positional_embedding_layer = PositionalEmbedding(maxlen=maxlen, 
-                                                              vocab_size=self.bert_configuration["vocab_size"], 
-                                                              embed_dim=self.bert_configuration["hidden_size"])
-        self.att = layers.MultiHeadAttention(num_heads=num_heads, 
-                                             key_dim=self.bert_configuration["hidden_size"])
-        self.ffn = tf.keras.Sequential([layers.Dense(num_heads*4, activation="relu"), 
-                                        layers.Dense(self.bert_configuration["hidden_size"])])
-        self.layernorm = layers.LayerNormalization(epsilon=epsilon)
-        self.dropout = layers.Dropout(self.config["dropout"])
-        self.global_average_pooling_1d = layers.GlobalAveragePooling1D()
-        self.add = tf.keras.layers.Add()
-        self.dense = tf.keras.layers.Dense(20, activation='relu')
-        self.out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')
+        self.reshape = tf.keras.layers.Flatten()
+        self.dropout = tf.keras.layers.Dropout(self.config["dropout"])
+        self.dense = tf.keras.layers.Dense(128, activation='relu')
+        self.out = tf.keras.layers.Dense(1, activation="sigmoid")
     
-    def compute_attention_masks(self, input_ids):
-        zero = tf.constant(0, dtype=tf.int64)
-        attention_masks = tf.cast(tf.not_equal(input_ids, zero), dtype=tf.int64)
-        return attention_masks
-    
-    def call(self, input_ids, training, attention_masks=None, **kwargs):
-        
-        #input
-        input_ids = tf.cast(input_ids, dtype=tf.int64)
+    def call(self, input_ids, training, **kwargs):
 
-        #create attention masks
-        if attention_masks == None:
-            attention_masks = self.compute_attention_masks(input_ids)
+        #encoder output
+        word_embeddings = self.encoder(input_ids).last_hidden_state
 
-        #bert_tweet output
-        word_embeddings = self.bert_encoder(input_ids, attention_masks).last_hidden_state
-       
-        #positional embeddings
-        positional_embeddings = self.positional_embedding_layer(input_ids, word_embeddings)
-        positional_embeddings = self.dropout(positional_embeddings, training=training)
-        positional_embeddings = self.layernorm(positional_embeddings)
+        word_embeddings_flatten = self.reshape(word_embeddings)
+        dense = self.dense(word_embeddings_flatten)
+        dense = self.dropout(dense, training=training)
+        out = self.out(dense)
+        return out
 
-        #encoder
-        encoder_output = self.att(positional_embeddings, positional_embeddings)
-        encoder_output = self.dropout(encoder_output, training=training)
-        encoder_output = self.add([positional_embeddings, encoder_output])
-        encoder_output = self.layernorm(encoder_output)
-        encoder_output_ffn = self.ffn(encoder_output)
-        encoder_output_ffn = self.dropout(encoder_output_ffn, training=training)
-        encoder_output = self.add([encoder_output, encoder_output_ffn])
-        encoder_output = self.layernorm(encoder_output)
-
-        #output (taking average of all hidden states)
-        output = self.global_average_pooling_1d(encoder_output)
-        # output = self.dense(output)
-        # output = self.dropout(output)
-        output = self.out(output)
-        return output
-    
     def build_model(self, input_shape):
-        input_data = layers.Input(shape=(input_shape,), dtype="float32")
+        input_data = tf.keras.layers.Input(shape=(input_shape,), dtype="int64")
         model = tf.keras.Model(inputs=input_data, outputs=self.call(input_data, training=False))
         model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
                                                         loss=['binary_crossentropy'], 
@@ -102,15 +44,15 @@ class BERTweet_transformer(Model):
         model.summary()
         return model
 
-class train_bertweet_transformer(object):
-    def __init__(self, config):
+class train_gpt2_mlp(object):
+    def __init__(self, config) -> None:
         self.config = config
 
     def vectorize(self, sentences):
         """
         tokenize each preprocessed sentence in dataset using bert tokenizer
         """
-        tokenizer = AutoTokenizer.from_pretrained("vinai/bertweet-covid19-base-cased", use_fast=False)
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
         max_len = 0
         input_ids = []
         for sentence in sentences:
@@ -123,7 +65,7 @@ class train_bertweet_transformer(object):
             padding_length = max_len - len(input_ids[index])
             input_ids[index] = input_ids[index] + ([0] * padding_length)
         return np.array(input_ids)
-
+    
     def pad(self, sentences, maxlen):
         """
         right pad sequence with 0 till max token length sentence
@@ -140,11 +82,11 @@ class train_bertweet_transformer(object):
     
     def train_model(self, train_dataset, val_datasets, test_datasets):
 
-        #make paths
+        #Make paths
         if not os.path.exists("assets/training_history/"):
             os.makedirs("assets/training_history/")
-        
-        #create train, val, and test datasets
+
+        #Create train, val, and test datasets
         train_sentences = self.vectorize(train_dataset["sentence"])
         train_sentiment_labels = np.array(train_dataset["sentiment_label"])
         val_sentences = self.vectorize(val_datasets["val_dataset"]["sentence"])
@@ -160,37 +102,35 @@ class train_bertweet_transformer(object):
         val_dataset = (val_sentences, val_sentiment_labels)
         test_dataset = (test_sentences, test_sentiment_labels)
 
-        #create additional validation datasets
+        #Create additional validation datasets
         additional_validation_datasets = []
         for key, value in test_datasets.items():
             # if key in ["test_dataset_one_rule"]:
             #     continue
             sentences = self.vectorize(test_datasets[key]["sentence"])
+            sentences = self.pad(sentences, maxlen)
             sentiment_labels = np.array(test_datasets[key]["sentiment_label"])
             dataset = (sentences, sentiment_labels, key)
             additional_validation_datasets.append(dataset)
 
-        #define callbacks
-        early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',              # 1. Calculate val_loss_1 
-                                                                    min_delta = 0,                  # 2. Check val_losses for next 10 epochs 
-                                                                    patience=10,                    # 3. Stop training if none of the val_losses are lower than val_loss_1
-                                                                    verbose=0,                      # 4. Get the trained weights corresponding to val_loss_1
+        #Define callbacks
+        early_stopping_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',  # 1. Calculate val_loss_1 
+                                                                    min_delta = 0,      # 2. Check val_losses for next 10 epochs 
+                                                                    patience=10,        # 3. Stop training if none of the val_losses are lower than val_loss_1
+                                                                    verbose=0,          # 4. Get the trained weights corresponding to val_loss_1
                                                                     mode="min",
                                                                     baseline=None, 
                                                                     restore_best_weights=True)
         my_callbacks = [
                         early_stopping_callback, 
                         AdditionalValidationSets(additional_validation_datasets, self.config)
-                        ]
-        
+                       ]
+
         #model compilation and summarization
-        model = BERTweet_transformer(self.config,
-                                     maxlen=self.maxlen,
-                                     num_heads=self.config["hidden_units"],
-                                     epsilon=1e-6).build_model(input_shape = train_dataset[0].shape[1])
+        model = gpt2_mlp(self.config).build_model(input_shape = train_dataset[0].shape[1])
         self.model = model
 
-        #train the model
+        # Train the model
         if self.config["train_model"] == True:
             self.model.fit(x=train_dataset[0], 
                     y=train_dataset[1], 
@@ -199,14 +139,14 @@ class train_bertweet_transformer(object):
                     validation_data=val_dataset, 
                     callbacks=my_callbacks)
 
-            #Save trained model
+            # Save trained model
             if not os.path.exists("assets/trained_models/"):
                 os.makedirs("assets/trained_models/")
             self.model.save_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
         
         if self.config["evaluate_model"] == True:
 
-            #load model
+            #Load model
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
             #Results to be created after evaluation
@@ -226,19 +166,19 @@ class train_bertweet_transformer(object):
                 prediction = np.rint(prediction)
                 results['sentiment_prediction_output'].append(prediction[0])
 
-            #save the results
+            #Save the results
             if not os.path.exists("assets/results/"):
                 os.makedirs("assets/results/")
             with open("assets/results/"+self.config["asset_name"]+".pickle", 'wb') as handle:
                 pickle.dump(results, handle)
-        
+
         if self.config["generate_explanation"] == True:
             print("\nLIME explanations")
 
-            #load trained model
+            #Load trained model
             self.model.load_weights("assets/trained_models/"+self.config["asset_name"]+".h5")
 
-            #results to be created after explanation
+            #Results to be created after explanation
             explanations = {"sentence":[], 
                             "LIME_explanation":[], 
                             "LIME_explanation_normalised":[]}
@@ -305,4 +245,3 @@ class train_bertweet_transformer(object):
             os.makedirs("assets/configurations/")
         with open("assets/configurations/"+self.config["asset_name"]+".pickle", 'wb') as handle:
             pickle.dump(self.config, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        

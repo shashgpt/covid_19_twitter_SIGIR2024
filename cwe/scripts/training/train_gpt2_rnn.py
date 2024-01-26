@@ -165,7 +165,7 @@ class train_gpt2_rnn(object):
             #Evaluation and predictions
             evaluations = self.model.evaluate(x=test_dataset[0], y=test_dataset[1])
             print("test loss, test acc:", evaluations)
-            predictions = self.model.predict(x=test_dataset[0][0])
+            predictions = self.model.predict(x=test_dataset[0])
             print(len(predictions))
 
             #Create results

@@ -79,15 +79,14 @@ class BERTweet_transformer(Model):
         #encoder
         encoder_output = self.att(positional_embeddings, positional_embeddings)
         encoder_output = self.dropout(encoder_output, training=training)
-        encoder_output = self.add([positional_embeddings, encoder_output])
-        encoder_output = self.layernorm(encoder_output)
+        encoder_output = self.layernorm(positional_embeddings + encoder_output)
         encoder_output_ffn = self.ffn(encoder_output)
         encoder_output_ffn = self.dropout(encoder_output_ffn, training=training)
-        encoder_output = self.add([encoder_output, encoder_output_ffn])
-        encoder_output = self.layernorm(encoder_output)
+        encoder_output = self.layernorm(encoder_output + encoder_output_ffn)
 
         #output (taking average of all hidden states)
         output = self.global_average_pooling_1d(encoder_output)
+        output = self.dropout(output)
         # output = self.dense(output)
         # output = self.dropout(output)
         output = self.out(output)
@@ -163,8 +162,6 @@ class train_bertweet_transformer(object):
         #create additional validation datasets
         additional_validation_datasets = []
         for key, value in test_datasets.items():
-            # if key in ["test_dataset_one_rule"]:
-            #     continue
             sentences = self.vectorize(test_datasets[key]["sentence"])
             sentiment_labels = np.array(test_datasets[key]["sentiment_label"])
             dataset = (sentences, sentiment_labels, key)
@@ -215,7 +212,7 @@ class train_bertweet_transformer(object):
             #Evaluation and predictions
             evaluations = self.model.evaluate(x=test_dataset[0], y=test_dataset[1])
             print("test loss, test acc:", evaluations)
-            predictions = self.model.predict(x=test_dataset[0][0])
+            predictions = self.model.predict(x=test_dataset[0])
             print(len(predictions))
 
             #Create results

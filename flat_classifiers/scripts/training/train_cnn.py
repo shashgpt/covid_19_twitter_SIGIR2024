@@ -16,9 +16,9 @@ from transformers import AutoTokenizer
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-def cnn(config, word_vectors): # Similar to one used in pytorch code for CIKM submission
+def cnn(config, word_vectors, maxlen): # Similar to one used in pytorch code for CIKM submission
 
-    input_sentence = Input(shape=(None,), dtype="int64")
+    input_sentence = Input(shape=(maxlen,), dtype="int64")
     word_embeddings = layers.Embedding(word_vectors.shape[0], 
                                         word_vectors.shape[1], 
                                         embeddings_initializer=Constant(word_vectors), 
@@ -151,7 +151,7 @@ class train_cnn(object):
                        ]
 
         #model compilation and summarization
-        model = cnn(self.config, word_vectors)
+        model = cnn(self.config, word_vectors, maxlen)
         model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
                                                         loss=['binary_crossentropy'], 
                                                         metrics=['accuracy'])    

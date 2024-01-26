@@ -119,21 +119,21 @@ if __name__=='__main__':
     # tf.random.set_seed(config["seed_value"])
 
     print("\nCreating input data")
-    if os.path.exists("datasets/"+config["dataset_name"]+"/preprocessed_dataset.pickle"):
-        with open("datasets/"+config["dataset_name"]+"/word_index.pickle", "rb") as handle:
-            word_index = pickle.load(handle)
-        with open("datasets/"+config["dataset_name"]+"/word_vectors.npy", "rb") as handle:
-            word_vectors = np.load(handle)
-        train_dataset = pickle.load(open("datasets/"+config["dataset_name"]+"/train_dataset.pickle", "rb"))
-        val_datasets = pickle.load(open("datasets/"+config["dataset_name"]+"/val_dataset.pickle", "rb"))
-        test_datasets = pickle.load(open("datasets/"+config["dataset_name"]+"/test_dataset.pickle", "rb"))
-    else:
-        raw_dataset = pickle.load(open(config["dataset_path"], "rb"))
-        raw_dataset = pd.DataFrame(raw_dataset)
-        preprocessed_dataset = Preprocess_dataset(config).preprocess_covid_tweets(raw_dataset)
-        preprocessed_dataset = pd.DataFrame(preprocessed_dataset)
-        word_vectors, word_index = Word_vectors(config).create_word_vectors(preprocessed_dataset)
-        train_dataset, val_datasets, test_datasets = Dataset_division(config).train_val_test_split(preprocessed_dataset)
+    # if os.path.exists("datasets/"+config["dataset_name"]+"/preprocessed_dataset.pickle"):
+    #     with open("datasets/"+config["dataset_name"]+"/word_index.pickle", "rb") as handle:
+    #         word_index = pickle.load(handle)
+    #     with open("datasets/"+config["dataset_name"]+"/word_vectors.npy", "rb") as handle:
+    #         word_vectors = np.load(handle)
+    #     train_dataset = pickle.load(open("datasets/"+config["dataset_name"]+"/train_dataset.pickle", "rb"))
+    #     val_datasets = pickle.load(open("datasets/"+config["dataset_name"]+"/val_dataset.pickle", "rb"))
+    #     test_datasets = pickle.load(open("datasets/"+config["dataset_name"]+"/test_dataset.pickle", "rb"))
+    # else:
+    raw_dataset = pickle.load(open(config["dataset_path"], "rb"))
+    raw_dataset = pd.DataFrame(raw_dataset)
+    preprocessed_dataset = Preprocess_dataset(config).preprocess_covid_tweets(raw_dataset)
+    preprocessed_dataset = pd.DataFrame(preprocessed_dataset)
+    word_vectors, word_index = Word_vectors(config).create_word_vectors(preprocessed_dataset)
+    train_dataset, val_datasets, test_datasets = Dataset_division(config).train_val_test_split(preprocessed_dataset)
     
     #create model
     print("\nBuilding model")

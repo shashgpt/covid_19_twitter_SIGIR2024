@@ -29,6 +29,7 @@ from scripts.training.train_gpt2_mlp import train_gpt2_mlp
 from scripts.training.train_gpt2_transformer import train_gpt2_transformer
 from scripts.training.train_gpt2_rnn import train_gpt2_rnn
 from scripts.training.train_elmo_mlp import train_elmo_mlp
+from scripts.training.train_gpt2_cnn import train_gpt2_cnn
 
 #disable warnings
 logging.disable(logging.WARNING)
@@ -157,3 +158,5 @@ if __name__=='__main__':
         train_gpt2_transformer(config).train_model(train_dataset, val_datasets, test_datasets)
     elif config["model_name"] in ["gpt2_lstm", "gpt2_bilstm", "gpt2_gru", "gpt2_bigru"]:
         train_gpt2_rnn(config).train_model(train_dataset, val_datasets, test_datasets)
+    elif config["model_name"] == "gpt2_cnn":
+        train_gpt2_cnn(config).train_model(train_dataset, val_datasets, test_datasets)

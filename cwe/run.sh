@@ -4,18 +4,18 @@
 #SBATCH --partition=gpu
 #SBATCH --time=UNLIMITED
 
-# #When PROTOTYPING interactively
-# asset="bertweet_mlp"
-# model_name="bertweet_mlp"
+# # #When PROTOTYPING interactively
+# asset="bertweet_cnn"
 # asset_name="${asset}_Prototype"
-# # timestamp="$(date +"%T")"
-# # mkdir -p "assets/logs"
-# # cd "assets/logs"
-# # rm "$asset_name$timestamp.out"
-# # exec 3>&1 4>&2
-# # trap 'exec 2>&4 1>&3' 0 1 2 3
-# # exec 1>$asset_name$timestamp.out 2>&1
-# # cd $OLDPWD
+# model_name="bertweet_cnn"
+# timestamp="$(date +"%T")"
+# mkdir -p "assets/logs"
+# cd "assets/logs"
+# rm "$asset_name$timestamp.out"
+# exec 3>&1 4>&2
+# trap 'exec 2>&4 1>&3' 0 1 2 3
+# exec 1>$asset_name$timestamp.out 2>&1
+# cd $OLDPWD
 # source /opt/anaconda2/bin/activate env_python_3.9_tensorflow
 # CUDNN_PATH=$(dirname $(python -c "import nvidia.cudnn;print(nvidia.cudnn.__file__)"))
 # export LD_LIBRARY_PATH=$CUDNN_PATH/lib:$CONDA_PREFIX/lib/:$LD_LIBRARY_PATH
@@ -36,12 +36,11 @@
 # --train_epochs 1 \
 # --dropout 0.5 \
 # --lime_no_of_samples 1000 \
-# --hidden_units 128
+# --hidden_units 100
 
 #When experimenting
-asset="gpt2_bigru"
-model_name="gpt2_bigru"
-asset_name=$asset
+asset_name="gpt2_cnn"
+model_name="gpt2_cnn"
 timestamp="$(date +"%T")"
 mkdir -p "assets/logs"
 cd "assets/logs"
@@ -70,4 +69,4 @@ python3 main.py \
 --train_epochs 50 \
 --dropout 0.5 \
 --lime_no_of_samples 1000 \
---hidden_units 128
+--hidden_units 100

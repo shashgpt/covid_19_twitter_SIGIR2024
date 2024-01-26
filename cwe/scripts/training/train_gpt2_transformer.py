@@ -66,15 +66,14 @@ class gpt2_transformer(Model):
         #encoder
         encoder_output = self.att(positional_embeddings, positional_embeddings)
         encoder_output = self.dropout(encoder_output, training=training)
-        encoder_output = self.add([positional_embeddings, encoder_output])
-        encoder_output = self.layernorm(encoder_output)
+        encoder_output = self.layernorm(positional_embeddings + encoder_output)
         encoder_output_ffn = self.ffn(encoder_output)
         encoder_output_ffn = self.dropout(encoder_output_ffn, training=training)
-        encoder_output = self.add([encoder_output, encoder_output_ffn])
-        encoder_output = self.layernorm(encoder_output)
+        encoder_output = self.layernorm(encoder_output + encoder_output_ffn)
 
         #output (taking average of all hidden states)
         output = self.global_average_pooling_1d(encoder_output)
+        output = self.dropout(output)
         # output = self.dense(output)
         # output = self.dropout(output)
         output = self.out(output)
@@ -166,13 +165,17 @@ class train_gpt2_transformer(object):
         my_callbacks = [
                         early_stopping_callback, 
                         AdditionalValidationSets(additional_validation_datasets, self.config)
-                        ]
+                       ]
         
         #model compilation and summarization
         model = gpt2_transformer(self.config,
                                      maxlen=self.maxlen,
                                      num_heads=self.config["hidden_units"],
-                                     epsilon=1e-6).build_model(input_shape = train_dataset[0].shape[1])
+                                     epsilon=1e-6)
+        model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
+                                                        loss=['binary_crossentropy'], 
+                                                        metrics=['accuracy'])
+        # model.summary()
         self.model = model
 
         #train the model
@@ -200,7 +203,7 @@ class train_gpt2_transformer(object):
             #Evaluation and predictions
             evaluations = self.model.evaluate(x=test_dataset[0], y=test_dataset[1])
             print("test loss, test acc:", evaluations)
-            predictions = self.model.predict(x=test_dataset[0][0])
+            predictions = self.model.predict(x=test_dataset[0])
             print(len(predictions))
 
             #Create results

@@ -6,7 +6,7 @@ import pickle
 import traceback
 from lime import lime_text
 from tqdm import tqdm
-from transformers import AutoTokenizer, TFAutoModel, BertConfig
+from transformers import GPT2Tokenizer, TFGPT2Model, GPT2Config
 from tensorflow.keras.models import Model
 from tensorflow.keras import layers
 from tensorflow.keras.layers import Embedding, Dropout, Dense, Input, Softmax, Lambda
@@ -15,31 +15,31 @@ from tensorflow.keras.initializers import Constant
 
 from scripts.training.additional_validation_sets import AdditionalValidationSets
 
-class BERTweet_cnn(tf.keras.Model):
+class gpt2_cnn(tf.keras.Model):
     def __init__(self, config, **kwargs):
         super().__init__()
         self.config = config
-        bert_configuration = BertConfig().to_dict()
-        self.bert_encoder = TFAutoModel.from_pretrained("vinai/bertweet-covid19-base-cased")
-        for layer in self.bert_encoder.layers:
+        self.configuration = GPT2Config().to_dict()
+        self.encoder = TFGPT2Model.from_pretrained('gpt2')
+        for layer in self.encoder.layers:
             layer.trainable = config["fine_tune_word_embeddings"]
 
         self.conv_1 = layers.Conv2D(filters = self.config["hidden_units"], 
-                                    kernel_size = (3, bert_configuration["hidden_size"]),
+                                    kernel_size = (3, self.configuration["n_embd"]),
                                     strides = 1,
                                     dilation_rate = 1,
                                     padding = "valid",
                                     data_format = "channels_first",
                                     name = "conv2D_1")
         self.conv_2 = layers.Conv2D(filters = self.config["hidden_units"], 
-                                    kernel_size = (4, bert_configuration["hidden_size"]),
+                                    kernel_size = (4, self.configuration["n_embd"]),
                                     strides = 1,
                                     dilation_rate = 1,
                                     padding = "valid",
                                     data_format = "channels_first",
                                     name = "conv2D_2")
         self.conv_3 = layers.Conv2D(filters = self.config["hidden_units"], 
-                                    kernel_size = (5, bert_configuration["hidden_size"]),
+                                    kernel_size = (5, self.configuration["n_embd"]),
                                     strides = 1,
                                     dilation_rate = 1,
                                     padding = "valid",
@@ -54,22 +54,10 @@ class BERTweet_cnn(tf.keras.Model):
                                       name="dropout")
         self.out = tf.keras.layers.Dense(1, activation="sigmoid")
     
-    def compute_attention_masks(self, input_ids):
-        zero = tf.constant(0, dtype=tf.int64)
-        attention_masks = tf.cast(tf.not_equal(input_ids, zero), dtype=tf.int64)
-        return attention_masks
-    
-    def call(self, input_ids, attention_masks=None, **kwargs):
-        
-        #input
-        input_ids = tf.cast(input_ids, dtype=tf.int64)
-
-        #create attention masks
-        if attention_masks == None:
-            attention_masks = self.compute_attention_masks(input_ids)
+    def call(self, input_ids, training, **kwargs):
 
         #bert_tweet output
-        word_embeddings = self.bert_encoder(input_ids, attention_masks).last_hidden_state
+        word_embeddings = self.encoder(input_ids).last_hidden_state
         word_embeddings_reshaped = tf.keras.backend.expand_dims(word_embeddings, axis=1) # batch_size x 1 x sent_len x embedding_dim
         
         output_1 = self.conv_1(word_embeddings_reshaped)
@@ -88,7 +76,7 @@ class BERTweet_cnn(tf.keras.Model):
         output_3 = self.max_pool(output_3)
 
         output = self.concat([output_1, output_2, output_3])
-        output = self.dropout(output)
+        output = self.dropout(output, training=training)
 
         out = self.out(output)
         return out
@@ -102,7 +90,7 @@ class BERTweet_cnn(tf.keras.Model):
         model.summary()
         return model
 
-class train_bertweet_cnn(object):
+class train_gpt2_cnn(object):
     def __init__(self, config):
         self.config = config
     
@@ -110,7 +98,7 @@ class train_bertweet_cnn(object):
         """
         tokenize each preprocessed sentence in dataset using bert tokenizer
         """
-        tokenizer = AutoTokenizer.from_pretrained("vinai/bertweet-covid19-base-cased", use_fast=False)
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
         max_len = 0
         input_ids = []
         for sentence in sentences:
@@ -183,15 +171,7 @@ class train_bertweet_cnn(object):
                        ]
 
         #model compilation and summarization
-        model = BERTweet_cnn(self.config).build_model(input_shape = maxlen)
-        # self.model = model
-        # model = BERTweet_cnn(self.config)
-        # model.compile(tf.keras.optimizers.legacy.Adam(learning_rate=self.config["learning_rate"]), 
-        #               loss=['binary_crossentropy'], 
-        #               metrics=['accuracy'])
-        # print(train_dataset[0].shape)
-        # model.build(input_shape = train_dataset[0].shape)
-        # model.summary()
+        model = gpt2_cnn(self.config).build_model(input_shape = maxlen)
         self.model = model
 
         # Train the model

@@ -117,8 +117,6 @@ class train_bertweet_mlp(object):
         #Create additional validation datasets
         additional_validation_datasets = []
         for key, value in test_datasets.items():
-            # if key in ["test_dataset_one_rule"]:
-            #     continue
             sentences = self.vectorize(test_datasets[key]["sentence"])
             sentences = self.pad(sentences, maxlen)
             sentiment_labels = np.array(test_datasets[key]["sentiment_label"])
@@ -167,7 +165,7 @@ class train_bertweet_mlp(object):
             #Evaluation and predictions
             evaluations = self.model.evaluate(x=test_dataset[0], y=test_dataset[1])
             print("test loss, test acc:", evaluations)
-            predictions = self.model.predict(x=test_dataset[0][0])
+            predictions = self.model.predict(x=test_dataset[0])
             print(len(predictions))
 
             #Create results
